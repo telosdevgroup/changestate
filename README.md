@@ -6,14 +6,15 @@
 
 ---
 
-## The 4 Universal Tiers
+## Universal Tiers
 
 | Tier | Cores & Clocks | GPU Clock | Radios / Sensors | Purpose |
 | :--- | :--- | :--- | :--- | :--- |
+| **`server`** | 2–4 Cores base @ 2.8 GHz cap (Boost OFF) | Floor (200 MHz) | Wi-Fi/Eth ON, BT OFF, mic MUTED, camera OFF, bloat paused | Ultra low-wattage server mode. Fluid XFCE color-coded terminal log viewing with prime core spike scaling loop (`--loop`) |
 | **`mom`** *(Metal Over Moss)* | 1 Core (Core 0 only) @ ~1.1 GHz | Floor (200 MHz) | All RF cut (`rfkill block all`), webcam sensor OFF, mic MUTED, mDNS stopped, incoming firewall locked | Emergency defense / air-gapped / absolute stealth |
 | **`lowlow`** | 4 Cores @ 1.6 GHz cap (Boost OFF) | Floor (200 MHz) | Wi-Fi ON, Bluetooth OFF, audio codec sleep, PCIe ASPM `powersupersave`, bloat daemons paused | Extreme battery sipping, silent fanless daily driver |
-| **`mid`** | 6 Cores (Half) with Boost enabled | Floor (200 MHz) | Wi-Fi ON, balanced profile, dev stack started | Snappy balanced daily workload |
-| **`eleven`** | 12 Cores (All) uncapped @ 4.6 GHz (Boost ON) | Unlocked Auto | Wi-Fi ON, performance profile, full stack running | Cranked to 11 / maximum throughput / full blast |
+| **`mid`** | 8 Cores (Half) with Boost enabled | Floor (200 MHz) | Wi-Fi ON, balanced profile, dev stack started | Snappy balanced daily workload |
+| **`eleven`** | 16 Cores (All) uncapped @ 4.7 GHz (Boost ON) | Unlocked Auto | Wi-Fi ON, performance profile, full stack running | Cranked to 11 / maximum throughput / full blast |
 
 *Note: Keyboard backlight is locked at 100% across all states. Antigravity AI assistant is preserved across all states.*
 

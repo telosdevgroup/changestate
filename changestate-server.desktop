@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: Server
+Comment=Low-wattage server, GPU floor, 2-4 cores, prime-spike scaling
+Exec=pkexec /home/dev/Code/changestate server
+Icon=network-server
+Terminal=false
+Categories=System;Settings;

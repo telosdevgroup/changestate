@@ -30,7 +30,9 @@ def write_sysfs(path_pattern, value):
                 # Fallback to sudo tee if run without root
                 subprocess.run(f"echo {value} | sudo tee {path} > /dev/null", shell=True, check=False)
             except Exception as e:
-                print(f"[!] Warning writing to {path}: {e}")
+                # Silently ignore offline CPU policy nodes (Device or resource busy)
+                if getattr(e, "errno", None) != 16:
+                    print(f"[!] Warning writing to {path}: {e}")
 
 def is_intel_cpu():
     """Detect if running on an Intel CPU with intel_pstate."""
@@ -46,17 +48,16 @@ def set_platform_profile(profile):
     write_sysfs("/sys/firmware/acpi/platform_profile", profile)
 
 def set_cpu_governor(governor):
-    """Set CPU frequency scaling governor across all cores (AMD or Intel)."""
+    """Set CPU frequency scaling governor and energy_performance_preference across all cores."""
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
-    # On Intel, set energy_performance_preference if present
-    if is_intel_cpu():
-        epp_map = {
-            "powersave": "power",
-            "performance": "performance",
-            "balanced": "balance_performance"
-        }
-        epp_val = epp_map.get(governor, "default")
-        write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
+    epp_map = {
+        "powersave": "power",
+        "performance": "performance",
+        "balanced": "balance_performance",
+        "balance_power": "balance_power"
+    }
+    epp_val = epp_map.get(governor, "default")
+    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
 
 def set_cpu_boost(enabled):
     """
@@ -152,14 +153,21 @@ def set_firewall_lockdown(enable=False):
         run_cmd("sudo ufw enable")
 
 def launch_user_terminal(persona_title):
-    """Spawn a user terminal showing the new persona banner and prompt in Cinnamon."""
+    """Spawn a user terminal showing the new persona banner and prompt in XFCE / Cinnamon."""
     target_user = os.environ.get("SUDO_USER") or "dev"
     display = os.environ.get("DISPLAY") or ":0"
     dbus = "unix:path=/run/user/1000/bus"
+    import shutil
+    term_bin = "xfce4-terminal" if shutil.which("xfce4-terminal") else ("gnome-terminal" if shutil.which("gnome-terminal") else "x-terminal-emulator")
+    
+    if "xfce4-terminal" in term_bin:
+        exec_arg = f"-T \"State: {persona_title}\" -e 'bash -c \"echo \\\"=== State: {persona_title} active ===\\\"; exec bash\"'"
+    else:
+        exec_arg = f"--title=\"State: {persona_title}\" -- bash -c \"echo \\\"=== State: {persona_title} active ===\\\"; exec bash\""
+
     cmd = (
         f"su - {target_user} -c 'DISPLAY={display} DBUS_SESSION_BUS_ADDRESS={dbus} "
-        f"gnome-terminal --title=\"State: {persona_title}\" -- "
-        f"bash -c \"echo \\\"=== State: {persona_title} active ===\\\"; exec bash\" &'"
+        f"{term_bin} {exec_arg} &'"
     )
     subprocess.Popen(cmd, shell=True)
 
@@ -371,7 +379,131 @@ def apply_lowlow():
     print("[-] Services: CUPS & ModemManager paused")
     print("[-] Backlight: Keyboard locked at 100%")
     print("[✓] System is in lowlow battery-sipping mode.")
-    launch_user_terminal("LowLow (Battery Sip / Wi-Fi ON / 4 Cores @ 1.6GHz)")
+def get_cpu_utilization():
+    """Sample overall CPU busy percentage over a short interval (0.2s)."""
+    import time
+    def read_stat():
+        with open("/proc/stat", "r") as f:
+            fields = [float(x) for x in f.readline().strip().split()[1:8]]
+        # fields: user, nice, system, idle, iowait, irq, softirq
+        idle = fields[3] + fields[4]
+        total = sum(fields)
+        return idle, total
+
+    try:
+        idle1, total1 = read_stat()
+        time.sleep(0.2)
+        idle2, total2 = read_stat()
+        diff_idle = idle2 - idle1
+        diff_total = total2 - total1
+        if diff_total <= 0:
+            return 0.0
+        return max(0.0, min(100.0, 100.0 * (1.0 - (diff_idle / diff_total))))
+    except Exception:
+        return 0.0
+
+def run_prime_scaling_loop(interval=2.0, min_cores=2, max_cores=None):
+    """
+    Infinite loop monitoring CPU load and dynamically scaling online core count
+    across prime numbers: [2, 3, 5, 7, 11, 13] up to hardware limit (16 threads).
+    Scales UP instantly when busy (>70%), scales DOWN smoothly when idle (<20%).
+    """
+    import time
+    total_hw = get_total_cores()
+    all_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31]
+    primes = [p for p in all_primes if p <= total_hw]
+    if total_hw not in primes and total_hw > 1:
+        primes.append(total_hw)  # ensure max hardware threads available as ceiling
+    primes = sorted(list(set(primes)))
+
+    # Filter by user boundaries
+    primes = [p for p in primes if p >= min_cores]
+    if max_cores:
+        primes = [p for p in primes if p <= max_cores]
+
+    curr_idx = 0
+    curr_cores = primes[curr_idx]
+    set_cpu_cores(curr_cores)
+    print(f"[*] Prime Core Scaler active. Prime tiers: {primes}. Current: {curr_cores} cores.")
+
+    consecutive_low = 0
+    try:
+        while True:
+            util = get_cpu_utilization()
+
+            # Spike detection (> 65% busy across online cores) -> Jump UP
+            if util > 65.0:
+                consecutive_low = 0
+                if curr_idx < len(primes) - 1:
+                    # If it's a massive surge (> 85%), jump two primes for hella padding
+                    step = 2 if (util > 85.0 and curr_idx + 2 < len(primes)) else 1
+                    curr_idx = min(curr_idx + step, len(primes) - 1)
+                    curr_cores = primes[curr_idx]
+                    set_cpu_cores(curr_cores)
+                    print(f"[!] Spike detected ({util:.1f}% load)! Scaled up to {curr_cores} cores.")
+            # Low load (< 25% busy) -> Cool down gracefully after 3 consecutive samples
+            elif util < 25.0:
+                consecutive_low += 1
+                if consecutive_low >= 3:
+                    consecutive_low = 0
+                    if curr_idx > 0:
+                        curr_idx -= 1
+                        curr_cores = primes[curr_idx]
+                        set_cpu_cores(curr_cores)
+                        print(f"[-] Load calm ({util:.1f}% load). Cooled down to {curr_cores} cores.")
+            else:
+                consecutive_low = 0
+
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("\n[*] Prime core scaling loop stopped by user.")
+
+def apply_server(daemon_mode=False):
+    print("======================================================")
+    print(" [*] ENGAGING LOW-WATTAGE SERVER PERSONA")
+    print("======================================================")
+    # 1. Sensors & radios
+    set_camera_power(enabled=False)
+    set_mic_mute(mute=True)
+    manage_service("avahi-daemon", "stop")
+
+    # Wi-Fi / Ethernet kept alive; Bluetooth killed
+    run_cmd("rfkill unblock wifi")
+    set_radios(wifi=True, bluetooth=False)
+
+    # 2. Deep hardware power-saving
+    set_audio_power_save(enable=True)
+    set_pcie_aspm("powersupersave")
+    set_aux_services(enable=False)
+    set_tray_icons(enable=False)
+
+    # 3. GPU floor: 200 MHz floor keeps display & colored terminal 100% smooth, cuts wattage to minimum
+    set_gpu_power_level("low")
+
+    # 4. CPU Base: 8 threads / 4 physical cores (Half the CPU for ideal server throughput + deep idle sleep)
+    set_cpu_cores(count="half")
+    set_platform_profile("low-power")
+    set_cpu_governor("powersave")
+    set_cpu_boost(False)
+    set_cpu_freq_cap(1600000)  # 1.6 GHz cool cap to prevent thermal ramps
+
+    # 5. Background stacks: pause bloat but ensure MongoDB for the web server stays active
+    manage_service("docker", "stop")
+    manage_service("ollama", "stop")
+    manage_service("mongod", "start")
+
+    print("[-] Radios      : Wi-Fi/Ethernet ON, Bluetooth OFF")
+    print("[-] Sensors     : Webcam OFF, Microphone MUTED")
+    print("[-] GPU State   : Forced Low (200 MHz floor, XFCE/Terminal buttery smooth)")
+    print("[-] PCIe & Audio: Powersupersave & audio sleep active")
+    print("[-] CPU Base    : EPP power, Turbo Boost OFF, 1.6 GHz cap (efficient & responsive)")
+    print("[-] Cores       : 8 Threads (Half CPU: 4 physical Zen 3+ cores active)")
+    print("[✓] Server power-down profile active.")
+    launch_user_terminal("Server Log Watcher (8 Threads / 1.6GHz / Balanced Server)")
+
+    if daemon_mode:
+        print("[*] Launching dynamic prime-numbered core scaling loop...")
+        run_prime_scaling_loop(interval=2.0, min_cores=2, max_cores=None)
 
 def apply_mid():
     print("[*] Applying persona: MID (minimal balanced power)")
@@ -494,7 +626,14 @@ def show_status():
     try:
         with open("/sys/devices/system/cpu/online", "r") as f:
             online = f.read().strip()
-            print(f"Online Cores     : {online} (out of 0-11)")
+            total_hw = get_total_cores()
+            print(f"Online Cores     : {online} (out of 0-{total_hw - 1})")
+    except Exception:
+        pass
+
+    try:
+        with open("/sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference", "r") as f:
+            print(f"CPU EPP          : {f.read().strip()}")
     except Exception:
         pass
 
@@ -516,6 +655,7 @@ def show_status():
         pass
 
 PERSONAS = {
+    "server": apply_server,
     "mom": apply_mom,
     "lowlow": apply_lowlow,
     "mid": apply_mid,
@@ -527,13 +667,16 @@ PERSONAS = {
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
-        print("Usage: changestate <persona>")
+        print("Usage: changestate <persona> [--loop]")
         print("\nAvailable personas:")
-        print("  mom      - DEFENSE / ULTRA-QUIET: RF cut, camera dead, 11 of 12 cores offline,")
+        print("  server   - LOW-WATTAGE SERVER: GPU low floor (~200MHz, flawless terminal logs),")
+        print("             4/2 cores base with 2.8GHz spike headroom, boost OFF, bloat purged.")
+        print("             Add --loop for infinite dynamic prime-numbered core scaling (2->3->5->7->11->13)")
+        print("  mom      - DEFENSE / ULTRA-QUIET: RF cut, camera dead, single core only,")
         print("             firewall lockdown, daemons purged. Hardwired Ethernet only.")
         print("  lowlow   - Low-power: Battery sipping, Wi-Fi ON, 1.6GHz CPU cap, GPU low, boost off")
-        print("  mid      - Balanced: Wi-Fi ON, half cores (6 threads), boost on, minimal GPU")
-        print("  eleven   - Cranked to 11: All 12 cores, 4.6GHz uncapped, GPU auto, full blast")
+        print("  mid      - Balanced: Wi-Fi ON, half cores, boost on, minimal GPU")
+        print("  eleven   - Cranked to 11: All cores uncapped, GPU auto, full blast")
         print("  status   - Show current active persona & hardware state")
         sys.exit(0)
 
@@ -548,7 +691,13 @@ def main():
         print(f"Choices: {', '.join(PERSONAS.keys())}")
         sys.exit(1)
 
-    PERSONAS[target]()
+    daemon_mode = "--loop" in sys.argv or "-l" in sys.argv
+
+    if target == "server":
+        PERSONAS[target](daemon_mode=daemon_mode)
+    else:
+        PERSONAS[target]()
+
     save_active_state(target)
     run_cmd(f'notify-send "State Changed" "Activated {target.upper()} persona" -i preferences-system-power')
 
