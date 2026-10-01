@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: Eleven
+Comment=Cranked to 11 - All 12 cores, 4.6GHz uncapped, full GPU
+Exec=pkexec /home/dev/Code/changestate eleven
+Icon=system-run
+Terminal=false
+Categories=System;Settings;

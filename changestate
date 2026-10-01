@@ -261,8 +261,8 @@ def apply_lowlow():
     print("[✓] System is in lowlow battery-sipping mode.")
     launch_user_terminal("LowLow (Battery Sip / Wi-Fi ON / 4 Cores @ 1.6GHz)")
 
-def apply_webdev():
-    print("[*] Applying persona: WEBDEV (minimal mid-power)")
+def apply_mid():
+    print("[*] Applying persona: MID (minimal balanced power)")
     # Restore camera, mic, services
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
@@ -294,11 +294,11 @@ def apply_webdev():
     print("[-] GPU: Low / minimal power state (200 MHz floor)")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
-    print("[✓] System is in minimal-power webdev mode.")
-    launch_user_terminal("WebDev (6 Cores / Balanced / Mongo & Ollama)")
+    print("[✓] System is in minimal-power mid mode.")
+    launch_user_terminal("Mid (6 Cores / Balanced / Mongo & Ollama)")
 
-def apply_inferencing():
-    print("[*] Applying persona: INFERENCING (maximum throughput)")
+def apply_eleven():
+    print("[*] Applying persona: ELEVEN (cranked to eleven / maximum throughput)")
     # Restore full hardware
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
@@ -330,8 +330,8 @@ def apply_inferencing():
     print("[-] GPU: Unlocked Auto scaling")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
-    print("[✓] System is in high-power inferencing mode.")
-    launch_user_terminal("Inferencing (All 12 Cores / Turbo Unlocked / Full GPU)")
+    print("[✓] System is cranked to ELEVEN.")
+    launch_user_terminal("Eleven (All 12 Cores / Turbo Unlocked / Full GPU)")
 STATE_FILE = "/var/run/changestate.state"
 
 def save_active_state(name):
@@ -404,20 +404,23 @@ def show_status():
 PERSONAS = {
     "mom": apply_mom,
     "lowlow": apply_lowlow,
-    "webdev": apply_webdev,
-    "inferencing": apply_inferencing,
+    "mid": apply_mid,
+    "eleven": apply_eleven,
+    # Aliases for backwards compatibility
+    "webdev": apply_mid,
+    "inferencing": apply_eleven,
 }
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
         print("Usage: changestate <persona>")
         print("\nAvailable personas:")
-        print("  mom          - DEFENSE / ULTRA-QUIET: RF cut, camera dead, 11 of 12 cores offline,")
-        print("                 firewall lockdown, daemons purged. Hardwired Ethernet only.")
-        print("  lowlow       - Low-power: Battery sipping, 1.6GHz CPU cap, GPU low, boost off")
-        print("  webdev       - Mid-power: Wi-Fi on, platform balanced, half cores, boost on")
-        print("  inferencing  - High-power: platform performance, cpu performance, boost on")
-        print("  status       - Show current active persona & hardware state")
+        print("  mom      - DEFENSE / ULTRA-QUIET: RF cut, camera dead, 11 of 12 cores offline,")
+        print("             firewall lockdown, daemons purged. Hardwired Ethernet only.")
+        print("  lowlow   - Low-power: Battery sipping, Wi-Fi ON, 1.6GHz CPU cap, GPU low, boost off")
+        print("  mid      - Balanced: Wi-Fi ON, half cores (6 threads), boost on, minimal GPU")
+        print("  eleven   - Cranked to 11: All 12 cores, 4.6GHz uncapped, GPU auto, full blast")
+        print("  status   - Show current active persona & hardware state")
         sys.exit(0)
 
     target = sys.argv[1].lower()

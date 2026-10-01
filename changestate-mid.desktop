@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: Mid
+Comment=Balanced 6-thread setup, Boost on, minimal GPU
+Exec=pkexec /home/dev/Code/changestate mid
+Icon=applications-development
+Terminal=false
+Categories=System;Settings;
