@@ -140,6 +140,30 @@ def set_aux_services(enable=True):
     for s in services:
         manage_service(s, action)
 
+def set_tray_icons(enable=True):
+    """
+    Clear or restore desktop panel tray icons:
+    Bluetooth tray (blueman), Mint Update indicator, Mint Report, and Printer notifications.
+    """
+    if not enable:
+        # Kill tray applet processes
+        tray_procs = [
+            "blueman-applet", "blueman-tray", "mintupdate-launcher",
+            "mintUpdate", "mintreport", "applet.py", "csd-print-notifications"
+        ]
+        for p in tray_procs:
+            run_cmd(f"pkill -9 -f {p}")
+    else:
+        # Spawn back standard user applets if not already running
+        target_user = os.environ.get("SUDO_USER") or "dev"
+        cmd = (
+            f"su - {target_user} -c 'DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+            f"sh -c \"blueman-applet >/dev/null 2>&1 & "
+            f"mintupdate-launcher >/dev/null 2>&1 & "
+            f"/usr/share/system-config-printer/applet.py >/dev/null 2>&1 &\"'"
+        )
+        subprocess.Popen(cmd, shell=True)
+
 def purge_heavy_stacks():
     """Immediately terminate heavy services, databases, game clients, and runtimes."""
     stacks = [
@@ -202,6 +226,7 @@ def apply_mom():
     print("[*] THE MOSS: Shrinking active compute surface to bare minimum...")
     purge_heavy_stacks()
     set_aux_services(enable=False)
+    set_tray_icons(enable=False)  # Clear printer, update, report, bluetooth from tray
     set_audio_power_save(enable=True)
     set_pcie_aspm("powersupersave")
     set_keyboard_backlight_max()  # Keep backlight at 100%
@@ -216,6 +241,7 @@ def apply_mom():
     print("[-] Radios      : CUT (Wi-Fi, Bluetooth, all RF blocked)")
     print("[-] Sensors     : Webcam OFF, Microphone MUTED")
     print("[-] Network     : mDNS stopped, Firewall DROP locked")
+    print("[-] Tray Icons  : Cleared (Bluetooth, Printer, Updates, Reports)")
     print("[-] CPU Cores   : 11 of 12 threads powered OFF (Core 0 only @ ~1.1 GHz)")
     print("[-] GPU State   : Forced low (200 MHz floor)")
     print("[-] PCIe & Audio: Link powersupersave, audio codec sleep active")
@@ -265,11 +291,12 @@ def apply_lowlow():
 
 def apply_mid():
     print("[*] Applying persona: MID (minimal balanced power)")
-    # Restore camera, mic, services
+    # Restore camera, mic, services, tray applets
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
     manage_service("avahi-daemon", "start")
     set_aux_services(enable=True)
+    set_tray_icons(enable=True)
     set_audio_power_save(enable=False)
     set_pcie_aspm("default")
     set_keyboard_backlight_max()  # Keep backlight at 100%
@@ -301,11 +328,12 @@ def apply_mid():
 
 def apply_eleven():
     print("[*] Applying persona: ELEVEN (cranked to eleven / maximum throughput)")
-    # Restore full hardware
+    # Restore full hardware & tray applets
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
     manage_service("avahi-daemon", "start")
     set_aux_services(enable=True)
+    set_tray_icons(enable=True)
     set_audio_power_save(enable=False)
     set_pcie_aspm("default")
     set_keyboard_backlight_max()  # Keep backlight at 100%
