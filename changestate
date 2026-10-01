@@ -32,17 +32,42 @@ def write_sysfs(path_pattern, value):
             except Exception as e:
                 print(f"[!] Warning writing to {path}: {e}")
 
+def is_intel_cpu():
+    """Detect if running on an Intel CPU with intel_pstate."""
+    return os.path.exists("/sys/devices/system/cpu/intel_pstate")
+
+def has_nvidia_gpu():
+    """Detect if NVIDIA GPU and driver tools are present."""
+    import shutil
+    return shutil.which("nvidia-smi") is not None
+
 def set_platform_profile(profile):
-    """Set ACPI platform profile (low-power, balanced, performance)."""
+    """Set ACPI platform profile (low-power, balanced, performance) if supported."""
     write_sysfs("/sys/firmware/acpi/platform_profile", profile)
 
 def set_cpu_governor(governor):
-    """Set CPU frequency scaling governor across all cores."""
+    """Set CPU frequency scaling governor across all cores (AMD or Intel)."""
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
+    # On Intel, set energy_performance_preference if present
+    if is_intel_cpu():
+        epp_map = {
+            "powersave": "power",
+            "performance": "performance",
+            "balanced": "balance_performance"
+        }
+        epp_val = epp_map.get(governor, "default")
+        write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
 
 def set_cpu_boost(enabled):
-    """Enable (1) or disable (0) CPU turbo/boost."""
-    write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+    """
+    Enable or disable CPU turbo/boost across AMD and Intel CPUs:
+    - AMD: /sys/devices/system/cpu/cpufreq/boost (1=enabled, 0=disabled)
+    - Intel: /sys/devices/system/cpu/intel_pstate/no_turbo (0=enabled, 1=disabled)
+    """
+    if is_intel_cpu():
+        write_sysfs("/sys/devices/system/cpu/intel_pstate/no_turbo", 0 if enabled else 1)
+    else:
+        write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
 
 def set_radios(wifi=True, bluetooth=False):
     """Control Wi-Fi and Bluetooth using rfkill."""
@@ -59,38 +84,61 @@ def set_radios(wifi=True, bluetooth=False):
 def set_cpu_freq_cap(max_khz=None):
     """Cap max CPU frequency across all cores (or restore to hardware max)."""
     if max_khz is None:
-        # Restore to default max (read from policy0/cpuinfo_max_freq)
         try:
             with open("/sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq", "r") as f:
                 max_khz = f.read().strip()
         except Exception:
-            max_khz = 4604757
+            max_khz = 5000000
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
 
 def set_gpu_power_level(level):
     """
-    Set AMD GPU dynamic power management level.
-    Levels:
-      'low'  - Forces lowest DPM clock state (e.g. 200MHz sclk) for extreme power saving.
-      'auto' - Default driver dynamic clock scaling.
-      'high' - Forces highest DPM clock state.
+    Set GPU dynamic power management level for AMD Radeon and NVIDIA:
+    - AMD: power_dpm_force_performance_level ('low', 'auto')
+    - NVIDIA: nvidia-smi clock locks and power management
     """
+    # 1. AMD Radeon GPUs
     write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
+
+    # 2. NVIDIA GPUs
+    if has_nvidia_gpu():
+        if level == "low":
+            # Lock NVIDIA GPU clocks down to power-saving floor (e.g., 300MHz)
+            run_cmd("nvidia-smi -lgc 300,600")
+            run_cmd("nvidia-smi --auto-boost-permission=0")
+        else:
+            # Reset NVIDIA GPU clocks back to unlocked dynamic scaling
+            run_cmd("nvidia-smi -rgc")
+            run_cmd("nvidia-smi --auto-boost-permission=1")
 
 def manage_service(service_name, action):
     """Start or stop systemd services if present."""
     run_cmd(f"sudo systemctl {action} {service_name}")
 
-def set_cpu_cores(count=12):
+def get_total_cores():
+    """Detect total number of CPU logical threads on the machine."""
+    import glob
+    nodes = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
+    return max(len(nodes), 1)
+
+def set_cpu_cores(count=None):
     """
-    Set the number of online CPU cores/threads (1 to 12).
+    Set the number of online CPU cores/threads dynamically.
     Core 0 is always online.
-    count=1  -> Only Core 0 online (MOM)
-    count=6  -> Half cores online (0-5 online, 6-11 offline for WebDev)
-    count=12 -> All 12 cores/threads online
+    count=1    -> Single core only (MOM)
+    count='half' -> 50% of available CPU cores online (MID)
+    count=None   -> All cores online (ELEVEN)
     """
-    for i in range(1, 12):
-        state = 1 if i < count else 0
+    total = get_total_cores()
+    if count == "half":
+        target = max(total // 2, 1)
+    elif isinstance(count, int):
+        target = min(max(count, 1), total)
+    else:
+        target = total
+
+    for i in range(1, total):
+        state = 1 if i < target else 0
         write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
 
 def set_camera_power(enabled=True):
@@ -340,9 +388,9 @@ def apply_mid():
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Balanced profile + half cores (6 of 12 threads online) to sip power
+    # Balanced profile + half cores online to sip power
     set_platform_profile("balanced")
-    set_cpu_cores(count=6)
+    set_cpu_cores(count="half")
     set_cpu_governor("powersave")
     set_cpu_boost(True)
     set_cpu_freq_cap(None)
@@ -355,12 +403,12 @@ def apply_mid():
 
     print("[-] Radios: Wi-Fi ON, Bluetooth OFF")
     print("[-] Platform Profile: balanced")
-    print("[-] CPU: powersave (HALF CORES: 6 threads active, Boost ON)")
+    print("[-] CPU: powersave (50% cores active, Boost ON)")
     print("[-] GPU: Low / minimal power state (200 MHz floor)")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
     print("[✓] System is in minimal-power mid mode.")
-    launch_user_terminal("Mid (6 Cores / Balanced / Mongo & Ollama)")
+    launch_user_terminal("Mid (50% Cores / Balanced / Dev Stack)")
 
 def apply_eleven():
     print("[*] Applying persona: ELEVEN (cranked to eleven / maximum throughput)")
@@ -377,12 +425,12 @@ def apply_eleven():
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Performance profile + ALL 12 cores online + unlocked clock speeds
+    # Performance profile + ALL cores online + unlocked clock speeds
     set_platform_profile("performance")
-    set_cpu_cores(count=12)
+    set_cpu_cores(count=None)  # Restore 100% of cores
     set_cpu_governor("performance")
     set_cpu_boost(True)
-    set_cpu_freq_cap(None)  # Full 4.6 GHz headroom
+    set_cpu_freq_cap(None)  # Full clock headroom
 
     # GPU: Unlocked dynamic scaling
     set_gpu_power_level("auto")
@@ -392,12 +440,12 @@ def apply_eleven():
 
     print("[-] Radios: Wi-Fi ON")
     print("[-] Platform Profile: performance")
-    print("[-] CPU: performance (ALL 12 threads active + Turbo Boost ON)")
+    print("[-] CPU: performance (ALL threads active + Turbo Boost ON)")
     print("[-] GPU: Unlocked Auto scaling")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
     print("[✓] System is cranked to ELEVEN.")
-    launch_user_terminal("Eleven (All 12 Cores / Turbo Unlocked / Full GPU)")
+    launch_user_terminal("Eleven (All Cores / Turbo Unlocked / Full GPU)")
 STATE_FILE = "/var/run/changestate.state"
 
 def save_active_state(name):
