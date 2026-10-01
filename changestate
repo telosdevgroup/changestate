@@ -1,0 +1,439 @@
+#!/usr/bin/env python3
+"""
+changestate - System persona switcher for Lenovo ThinkBook (AMD Ryzen)
+Personas:
+  1. radiosilent (low-power, extreme battery, radios cut)
+  2. webdev      (mid-power, balanced, wifi on, snappy dev environment)
+  3. inferencing (high-power, maximum performance, cpu boost, heavy workloads)
+"""
+
+import sys
+import os
+import glob
+import subprocess
+
+def run_cmd(cmd):
+    """Run a shell command silently; ignore non-fatal errors."""
+    try:
+        subprocess.run(cmd, shell=True, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+def write_sysfs(path_pattern, value):
+    """Write value to one or more sysfs files matching path_pattern."""
+    for path in glob.glob(path_pattern):
+        if os.path.exists(path):
+            try:
+                with open(path, "w") as f:
+                    f.write(str(value))
+            except PermissionError:
+                # Fallback to sudo tee if run without root
+                subprocess.run(f"echo {value} | sudo tee {path} > /dev/null", shell=True, check=False)
+            except Exception as e:
+                print(f"[!] Warning writing to {path}: {e}")
+
+def set_platform_profile(profile):
+    """Set ACPI platform profile (low-power, balanced, performance)."""
+    write_sysfs("/sys/firmware/acpi/platform_profile", profile)
+
+def set_cpu_governor(governor):
+    """Set CPU frequency scaling governor across all cores."""
+    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
+
+def set_cpu_boost(enabled):
+    """Enable (1) or disable (0) CPU turbo/boost."""
+    write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+
+def set_radios(wifi=True, bluetooth=False):
+    """Control Wi-Fi and Bluetooth using rfkill."""
+    if wifi:
+        run_cmd("rfkill unblock wifi")
+    else:
+        run_cmd("rfkill block wifi")
+
+    if bluetooth:
+        run_cmd("rfkill unblock bluetooth")
+    else:
+        run_cmd("rfkill block bluetooth")
+
+def set_cpu_freq_cap(max_khz=None):
+    """Cap max CPU frequency across all cores (or restore to hardware max)."""
+    if max_khz is None:
+        # Restore to default max (read from policy0/cpuinfo_max_freq)
+        try:
+            with open("/sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq", "r") as f:
+                max_khz = f.read().strip()
+        except Exception:
+            max_khz = 4604757
+    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
+
+def set_gpu_power_level(level):
+    """
+    Set AMD GPU dynamic power management level.
+    Levels:
+      'low'  - Forces lowest DPM clock state (e.g. 200MHz sclk) for extreme power saving.
+      'auto' - Default driver dynamic clock scaling.
+      'high' - Forces highest DPM clock state.
+    """
+    write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
+
+def manage_service(service_name, action):
+    """Start or stop systemd services if present."""
+    run_cmd(f"sudo systemctl {action} {service_name}")
+
+def set_cpu_cores(count=12):
+    """
+    Set the number of online CPU cores/threads (1 to 12).
+    Core 0 is always online.
+    count=1  -> Only Core 0 online (MOM)
+    count=6  -> Half cores online (0-5 online, 6-11 offline for WebDev)
+    count=12 -> All 12 cores/threads online
+    """
+    for i in range(1, 12):
+        state = 1 if i < count else 0
+        write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
+
+def set_camera_power(enabled=True):
+    """Enable or disable hardware power to the webcam sensor on Lenovo."""
+    write_sysfs("/sys/devices/pci*/**/VPC2004:00/camera_power", 1 if enabled else 0)
+
+def set_firewall_lockdown(enable=False):
+    """Enforce incoming DROP firewall policy."""
+    if enable:
+        run_cmd("sudo ufw default deny incoming")
+        run_cmd("sudo ufw enable")
+
+def launch_user_terminal(persona_title):
+    """Spawn a user terminal showing the new persona banner and prompt."""
+    target_user = os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_USER") or "dev"
+    cmd = (
+        f"su - {target_user} -c 'DISPLAY=:0 x-terminal-emulator "
+        f"-T \"State: {persona_title}\" "
+        f"-e \"bash -c \\\"echo \\'=== State: {persona_title} active ===\\'; exec bash\\\"\" &'"
+    )
+    subprocess.Popen(cmd, shell=True)
+
+def set_audio_power_save(enable=True):
+    """Enable 1-second auto power down for audio codec, or disable for zero latency."""
+    val = 1 if enable else 0
+    write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", val)
+
+def set_pcie_aspm(policy="default"):
+    """Set PCIe Active State Power Management policy (e.g. powersupersave or default)."""
+    write_sysfs("/sys/module/pcie_aspm/parameters/policy", policy)
+
+def set_keyboard_backlight_max():
+    """Ensure keyboard backlight stays locked at 100% (level 2 of 2)."""
+    write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
+
+def set_mic_mute(mute=True):
+    """Hard mute or unmute microphone capture channels via ALSA."""
+    action = "mute" if mute else "unmute"
+    run_cmd(f"amixer set Capture {action}")
+
+def set_aux_services(enable=True):
+    """Control auxiliary background services (cups printing, modemmanager, bluetooth)."""
+    services = ["cups", "cups-browsed", "ModemManager"]
+    action = "start" if enable else "stop"
+    for s in services:
+        manage_service(s, action)
+
+def purge_heavy_stacks():
+    """Immediately terminate heavy services, databases, game clients, and runtimes."""
+    stacks = [
+        "docker", "containerd", "ollama", "mongod", "mongodb",
+        "redis-server", "redis", "celery"
+    ]
+    for s in stacks:
+        manage_service(s, "stop")
+
+    # Patterns of processes to kill on sight (browsers, games, launchers, heavy stacks)
+    # NOTE: Antigravity is explicitly preserved across all states!
+    kill_patterns = [
+        "google-chrome",
+        "chrome",
+        "chromium",
+        "brave",
+        "firefox",
+        "steam",
+        "steamwebhelper",
+        "Battle.net",
+        "Battle.net.exe",
+        "Agent.exe",
+        "tsm",
+        "TSM",
+        "TradeSkillMaster",
+        "ollama",
+        "mongod",
+        "mongodb",
+        "redis-server",
+        "redis",
+        "celery",
+        "postgres",
+        "mysqld",
+        "node"
+    ]
+    for p in kill_patterns:
+        run_cmd(f"sudo pkill -9 -i -f {p}")
+
+def start_dev_stack():
+    """Ensure MongoDB and Ollama services are active."""
+    for s in ["mongod", "mongodb", "ollama"]:
+        manage_service(s, "start")
+
+# --- Persona Definitions ---
+
+def apply_mom():
+    print("======================================================")
+    print(" [!] ENGAGING DEFENSIVE POSTURE: M.o.M. (Metal Over Moss)")
+    print("======================================================")
+    # --- The Metal (Hardened Shell & Defenses) ---
+    print("[*] THE METAL: Activating absolute network & sensor defenses...")
+    set_radios(wifi=False, bluetooth=False)
+    run_cmd("rfkill block all")  # Kill all RF antennas immediately
+    set_firewall_lockdown(enable=True)
+    set_camera_power(enabled=False)
+    set_mic_mute(mute=True)      # Mute microphone hardware capture
+    manage_service("avahi-daemon", "stop")  # Stop LAN mDNS broadcasting
+
+    # --- The Moss (Minimal Surface Footprint) ---
+    print("[*] THE MOSS: Shrinking active compute surface to bare minimum...")
+    purge_heavy_stacks()
+    set_aux_services(enable=False)
+    set_audio_power_save(enable=True)
+    set_pcie_aspm("powersupersave")
+    set_keyboard_backlight_max()  # Keep backlight at 100%
+
+    set_cpu_cores(count=1)  # Cores 1-11 powered off (single core only)
+    set_platform_profile("low-power")
+    set_cpu_governor("powersave")
+    set_cpu_boost(False)
+    set_cpu_freq_cap(1109580)  # Downclock remaining core to absolute minimum (~1.1 GHz)
+    set_gpu_power_level("low")   # Force GPU to 200 MHz
+
+    print("[-] Radios      : CUT (Wi-Fi, Bluetooth, all RF blocked)")
+    print("[-] Sensors     : Webcam OFF, Microphone MUTED")
+    print("[-] Network     : mDNS stopped, Firewall DROP locked")
+    print("[-] CPU Cores   : 11 of 12 threads powered OFF (Core 0 only @ ~1.1 GHz)")
+    print("[-] GPU State   : Forced low (200 MHz floor)")
+    print("[-] PCIe & Audio: Link powersupersave, audio codec sleep active")
+    print("[-] Backlight   : Keyboard locked at 100%")
+    print("[-] Conduit     : Hardwired Ethernet ONLY")
+    print("[✓] Surface reduced to Moss. Encased in Metal. Submerged.")
+    launch_user_terminal("MOM (Submerged / 1 Core / Air-Gapped)")
+
+def apply_lowlow():
+    print("[*] Applying persona: LOWLOW (extreme low-power)")
+    # Restore sensors & network
+    set_camera_power(enabled=True)
+    set_mic_mute(mute=False)
+    manage_service("avahi-daemon", "start")
+
+    # 1. Radios: Wi-Fi ON, Bluetooth OFF
+    run_cmd("rfkill unblock wifi")
+    set_radios(wifi=True, bluetooth=False)
+
+    # 2. Deep hardware power-saving
+    set_audio_power_save(enable=True)
+    set_pcie_aspm("powersupersave")
+    set_aux_services(enable=False)  # Kill CUPS, modemmanager
+    set_keyboard_backlight_max()    # Keep backlight at 100%
+
+    # 3. Platform profile & CPU governor + Hard downclock to 1.6 GHz base across 4 cores
+    set_cpu_cores(count=4)
+    set_platform_profile("low-power")
+    set_cpu_governor("powersave")
+    set_cpu_boost(False)
+    set_cpu_freq_cap(1600000)  # Hard cap at 1.6 GHz
+
+    # 4. Force GPU to lowest clock tier (200-400 MHz)
+    set_gpu_power_level("low")
+
+    # 5. Stop heavy background services if active
+    purge_heavy_stacks()
+    print("[-] Radios: Wi-Fi ON, Bluetooth OFF")
+    print("[-] Platform Profile: low-power")
+    print("[-] CPU: powersave (4 threads online, Hard cap @ 1.6 GHz, Turbo Boost OFF)")
+    print("[-] GPU: Low-power state forced (200-400 MHz)")
+    print("[-] PCIe & Audio: Link powersupersave, audio codec sleep active")
+    print("[-] Services: CUPS & ModemManager paused")
+    print("[-] Backlight: Keyboard locked at 100%")
+    print("[✓] System is in lowlow battery-sipping mode.")
+    launch_user_terminal("LowLow (Battery Sip / Wi-Fi ON / 4 Cores @ 1.6GHz)")
+
+def apply_webdev():
+    print("[*] Applying persona: WEBDEV (minimal mid-power)")
+    # Restore camera, mic, services
+    set_camera_power(enabled=True)
+    set_mic_mute(mute=False)
+    manage_service("avahi-daemon", "start")
+    set_aux_services(enable=True)
+    set_audio_power_save(enable=False)
+    set_pcie_aspm("default")
+    set_keyboard_backlight_max()  # Keep backlight at 100%
+
+    run_cmd("rfkill unblock wifi")
+    set_radios(wifi=True, bluetooth=False)
+
+    # Balanced profile + half cores (6 of 12 threads online) to sip power
+    set_platform_profile("balanced")
+    set_cpu_cores(count=6)
+    set_cpu_governor("powersave")
+    set_cpu_boost(True)
+    set_cpu_freq_cap(None)
+
+    # Minimal GPU (keep GPU down at lowest clock floor)
+    set_gpu_power_level("low")
+
+    # Start dev stack
+    start_dev_stack()
+
+    print("[-] Radios: Wi-Fi ON, Bluetooth OFF")
+    print("[-] Platform Profile: balanced")
+    print("[-] CPU: powersave (HALF CORES: 6 threads active, Boost ON)")
+    print("[-] GPU: Low / minimal power state (200 MHz floor)")
+    print("[-] Services: MongoDB, Ollama active")
+    print("[-] Backlight: Keyboard locked at 100%")
+    print("[✓] System is in minimal-power webdev mode.")
+    launch_user_terminal("WebDev (6 Cores / Balanced / Mongo & Ollama)")
+
+def apply_inferencing():
+    print("[*] Applying persona: INFERENCING (maximum throughput)")
+    # Restore full hardware
+    set_camera_power(enabled=True)
+    set_mic_mute(mute=False)
+    manage_service("avahi-daemon", "start")
+    set_aux_services(enable=True)
+    set_audio_power_save(enable=False)
+    set_pcie_aspm("default")
+    set_keyboard_backlight_max()  # Keep backlight at 100%
+
+    run_cmd("rfkill unblock wifi")
+    set_radios(wifi=True, bluetooth=False)
+
+    # Performance profile + ALL 12 cores online + unlocked clock speeds
+    set_platform_profile("performance")
+    set_cpu_cores(count=12)
+    set_cpu_governor("performance")
+    set_cpu_boost(True)
+    set_cpu_freq_cap(None)  # Full 4.6 GHz headroom
+
+    # GPU: Unlocked dynamic scaling
+    set_gpu_power_level("auto")
+
+    # Ensure AI & Database stack is up
+    start_dev_stack()
+
+    print("[-] Radios: Wi-Fi ON")
+    print("[-] Platform Profile: performance")
+    print("[-] CPU: performance (ALL 12 threads active + Turbo Boost ON)")
+    print("[-] GPU: Unlocked Auto scaling")
+    print("[-] Services: MongoDB, Ollama active")
+    print("[-] Backlight: Keyboard locked at 100%")
+    print("[✓] System is in high-power inferencing mode.")
+    launch_user_terminal("Inferencing (All 12 Cores / Turbo Unlocked / Full GPU)")
+STATE_FILE = "/var/run/changestate.state"
+
+def save_active_state(name):
+    """Record the active persona name to STATE_FILE."""
+    try:
+        with open(STATE_FILE, "w") as f:
+            f.write(name)
+    except PermissionError:
+        subprocess.run(f"echo {name} | sudo tee {STATE_FILE} > /dev/null", shell=True, check=False)
+    except Exception:
+        pass
+
+def get_active_state():
+    """Read the active persona name from STATE_FILE."""
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                return f.read().strip()
+        except Exception:
+            pass
+    return "untracked / manual"
+
+def show_status():
+    print("========================================")
+    print(f" Active Persona  : {get_active_state().upper()}")
+    print("========================================")
+    try:
+        with open("/sys/firmware/acpi/platform_profile", "r") as f:
+            print(f"Platform Profile : {f.read().strip()}")
+    except Exception:
+        pass
+
+    try:
+        with open("/sys/devices/system/cpu/cpufreq/policy0/scaling_governor", "r") as f:
+            print(f"CPU Governor     : {f.read().strip()}")
+    except Exception:
+        pass
+
+    try:
+        with open("/sys/devices/system/cpu/cpufreq/boost", "r") as f:
+            boost_val = f.read().strip()
+            print(f"CPU Boost        : {'Enabled' if boost_val == '1' else 'Disabled'}")
+    except Exception:
+        pass
+
+    try:
+        with open("/sys/devices/system/cpu/online", "r") as f:
+            online = f.read().strip()
+            print(f"Online Cores     : {online} (out of 0-11)")
+    except Exception:
+        pass
+
+    try:
+        gpu_nodes = glob.glob("/sys/class/drm/card*/device/power_dpm_force_performance_level")
+        if gpu_nodes:
+            with open(gpu_nodes[0], "r") as f:
+                print(f"GPU Power Level  : {f.read().strip()}")
+    except Exception:
+        pass
+
+    try:
+        with open("/sys/class/power_supply/BAT0/capacity", "r") as f:
+            cap = f.read().strip()
+        with open("/sys/class/power_supply/BAT0/status", "r") as f:
+            stat = f.read().strip()
+        print(f"Battery          : {cap}% ({stat})")
+    except Exception:
+        pass
+
+PERSONAS = {
+    "mom": apply_mom,
+    "lowlow": apply_lowlow,
+    "webdev": apply_webdev,
+    "inferencing": apply_inferencing,
+}
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        print("Usage: changestate <persona>")
+        print("\nAvailable personas:")
+        print("  mom          - DEFENSE / ULTRA-QUIET: RF cut, camera dead, 11 of 12 cores offline,")
+        print("                 firewall lockdown, daemons purged. Hardwired Ethernet only.")
+        print("  lowlow       - Low-power: Battery sipping, 1.6GHz CPU cap, GPU low, boost off")
+        print("  webdev       - Mid-power: Wi-Fi on, platform balanced, half cores, boost on")
+        print("  inferencing  - High-power: platform performance, cpu performance, boost on")
+        print("  status       - Show current active persona & hardware state")
+        sys.exit(0)
+
+    target = sys.argv[1].lower()
+
+    if target == "status":
+        show_status()
+        return
+
+    if target not in PERSONAS:
+        print(f"Error: Unknown persona '{target}'")
+        print(f"Choices: {', '.join(PERSONAS.keys())}")
+        sys.exit(1)
+
+    PERSONAS[target]()
+    save_active_state(target)
+    run_cmd(f'notify-send "State Changed" "Activated {target.upper()} persona" -i preferences-system-power')
+
+if __name__ == "__main__":
+    main()

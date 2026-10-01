@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: WebDev
+Comment=Balanced dev environment, 6 cores, MongoDB, Ollama
+Exec=pkexec /home/dev/Code/changestate webdev
+Icon=applications-development
+Terminal=false
+Categories=System;Settings;
