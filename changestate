@@ -104,12 +104,14 @@ def set_firewall_lockdown(enable=False):
         run_cmd("sudo ufw enable")
 
 def launch_user_terminal(persona_title):
-    """Spawn a user terminal showing the new persona banner and prompt."""
-    target_user = os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_USER") or "dev"
+    """Spawn a user terminal showing the new persona banner and prompt in Cinnamon."""
+    target_user = os.environ.get("SUDO_USER") or "dev"
+    display = os.environ.get("DISPLAY") or ":0"
+    dbus = "unix:path=/run/user/1000/bus"
     cmd = (
-        f"su - {target_user} -c 'DISPLAY=:0 x-terminal-emulator "
-        f"-T \"State: {persona_title}\" "
-        f"-e \"bash -c \\\"echo \\'=== State: {persona_title} active ===\\'; exec bash\\\"\" &'"
+        f"su - {target_user} -c 'DISPLAY={display} DBUS_SESSION_BUS_ADDRESS={dbus} "
+        f"gnome-terminal --title=\"State: {persona_title}\" -- "
+        f"bash -c \"echo \\\"=== State: {persona_title} active ===\\\"; exec bash\" &'"
     )
     subprocess.Popen(cmd, shell=True)
 
