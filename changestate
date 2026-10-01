@@ -140,11 +140,46 @@ def set_aux_services(enable=True):
     for s in services:
         manage_service(s, action)
 
+def set_cinnamon_applets(enable=True):
+    """
+    Control Cinnamon desktop panel native applets (notifications, printers).
+    """
+    target_user = os.environ.get("SUDO_USER") or "dev"
+    if not enable:
+        # Hide printers and notifications applets from the panel
+        cmd = (
+            f"su - {target_user} -c 'DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+            f"gsettings set org.cinnamon enabled-applets \""
+            f"['panel1:left:0:menu@cinnamon.org:0', 'panel1:left:1:separator@cinnamon.org:1', "
+            f"'panel1:left:2:grouped-window-list@cinnamon.org:2', 'panel1:right:0:systray@cinnamon.org:3', "
+            f"'panel1:right:1:xapp-status@cinnamon.org:4', 'panel1:right:4:removable-drives@cinnamon.org:7', "
+            f"'panel1:right:5:keyboard@cinnamon.org:8', 'panel1:right:6:favorites@cinnamon.org:9', "
+            f"'panel1:right:7:network@cinnamon.org:10', 'panel1:right:8:sound@cinnamon.org:11', "
+            f"'panel1:right:9:power@cinnamon.org:12', 'panel1:right:10:calendar@cinnamon.org:13', "
+            f"'panel1:right:11:cornerbar@cinnamon.org:14']\"'"
+        )
+    else:
+        # Restore printers and notifications to panel
+        cmd = (
+            f"su - {target_user} -c 'DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+            f"gsettings set org.cinnamon enabled-applets \""
+            f"['panel1:left:0:menu@cinnamon.org:0', 'panel1:left:1:separator@cinnamon.org:1', "
+            f"'panel1:left:2:grouped-window-list@cinnamon.org:2', 'panel1:right:0:systray@cinnamon.org:3', "
+            f"'panel1:right:1:xapp-status@cinnamon.org:4', 'panel1:right:2:notifications@cinnamon.org:5', "
+            f"'panel1:right:3:printers@cinnamon.org:6', 'panel1:right:4:removable-drives@cinnamon.org:7', "
+            f"'panel1:right:5:keyboard@cinnamon.org:8', 'panel1:right:6:favorites@cinnamon.org:9', "
+            f"'panel1:right:7:network@cinnamon.org:10', 'panel1:right:8:sound@cinnamon.org:11', "
+            f"'panel1:right:9:power@cinnamon.org:12', 'panel1:right:10:calendar@cinnamon.org:13', "
+            f"'panel1:right:11:cornerbar@cinnamon.org:14']\"'"
+        )
+    subprocess.Popen(cmd, shell=True)
+
 def set_tray_icons(enable=True):
     """
     Clear or restore desktop panel tray icons:
     Bluetooth tray (blueman), Mint Update indicator, Mint Report, and Printer notifications.
     """
+    set_cinnamon_applets(enable)
     if not enable:
         # Kill tray applet and printer notification processes
         tray_procs = [
