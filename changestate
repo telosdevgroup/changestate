@@ -146,13 +146,14 @@ def set_tray_icons(enable=True):
     Bluetooth tray (blueman), Mint Update indicator, Mint Report, and Printer notifications.
     """
     if not enable:
-        # Kill tray applet processes
+        # Kill tray applet and printer notification processes
         tray_procs = [
             "blueman-applet", "blueman-tray", "mintupdate-launcher",
-            "mintUpdate", "mintreport", "applet.py", "csd-print-notifications"
+            "mintUpdate", "mintreport", "applet.py", "csd-print-notifications",
+            "csd-printer", "scp-dbus-service"
         ]
         for p in tray_procs:
-            run_cmd(f"pkill -9 -f {p}")
+            run_cmd(f"sudo pkill -9 -i -f {p}")
     else:
         # Spawn back standard user applets if not already running
         target_user = os.environ.get("SUDO_USER") or "dev"
