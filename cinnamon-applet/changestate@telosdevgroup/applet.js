@@ -84,12 +84,6 @@ class ChangeStateApplet extends Applet.TextIconApplet {
 
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        let loopItem = new PopupMenu.PopupIconMenuItem("Start Dynamic Load Loop", "media-playlist-repeat", St.IconType.SYMBOLIC);
-        loopItem.connect('activate', () => {
-            Util.spawnCommandLineAsync('gnome-terminal --title="ChangeState Prime Loop" -- bash -c "pkexec /home/dev/Code/changestate loop"');
-        });
-        this.menu.addMenuItem(loopItem);
-
         let statusItem = new PopupMenu.PopupIconMenuItem("Status Inspector", "utilities-terminal", St.IconType.SYMBOLIC);
         statusItem.connect('activate', () => {
             Util.spawnCommandLineAsync('gnome-terminal --title="ChangeState Status" -- bash -c "/home/dev/Code/changestate status; echo; read -p \\"Press enter to close...\\""');

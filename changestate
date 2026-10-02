@@ -3,7 +3,6 @@
 changestate - Discrete Prime Core Stepping & Hardware Power Management
 Operates strictly via Prime Cores + Percentage Capacity:
   P:2, P:3, P:5, P:7, P:11, P:13, P:17, P:19, P:23, P:29, P:31
-  and dynamic load-scaling loop ('changestate loop').
 """
 
 import sys
@@ -11,7 +10,6 @@ import os
 import glob
 import subprocess
 import json
-import time
 from datetime import datetime, timezone
 
 def run_cmd(cmd):
@@ -60,11 +58,7 @@ def set_cpu_governor(governor, epp=None):
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
 
 def set_cpu_boost(enabled):
-    """
-    Enable or disable CPU turbo/boost across AMD and Intel CPUs:
-    - AMD: /sys/devices/system/cpu/cpufreq/boost (1=enabled, 0=disabled)
-    - Intel: /sys/devices/system/cpu/intel_pstate/no_turbo (0=enabled, 1=disabled)
-    """
+    """Enable or disable CPU turbo/boost across AMD and Intel CPUs."""
     if is_intel_cpu():
         write_sysfs("/sys/devices/system/cpu/intel_pstate/no_turbo", 0 if enabled else 1)
     else:
@@ -93,13 +87,8 @@ def set_cpu_freq_cap(max_khz=None):
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
 
 def set_gpu_power_level(level):
-    """
-    Set GPU dynamic power management level for AMD Radeon and NVIDIA.
-    """
-    # 1. AMD Radeon GPUs
+    """Set GPU dynamic power management level for AMD Radeon and NVIDIA."""
     write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
-
-    # 2. NVIDIA GPUs
     if has_nvidia_gpu():
         if level in ("low", "lowlow"):
             run_cmd("nvidia-smi -pl 31")
@@ -115,7 +104,6 @@ def set_gpu_power_level(level):
             run_cmd("nvidia-smi --auto-boost-permission=1")
 
 def manage_service(service_name, action):
-    """Start or stop systemd services if present."""
     run_cmd(f"sudo systemctl {action} {service_name}")
 
 def get_total_cores():
@@ -124,26 +112,17 @@ def get_total_cores():
     return max(len(nodes), 1)
 
 def set_cpu_cores(count=None):
-    """
-    Set the number of online CPU cores/threads dynamically.
-    Core 0 is always online.
-    """
+    """Set the number of online CPU cores/threads dynamically (Core 0 always online)."""
     total = get_total_cores()
-    if isinstance(count, int):
-        target = min(max(count, 1), total)
-    else:
-        target = total
-
+    target = min(max(count, 1), total) if isinstance(count, int) else total
     for i in range(1, total):
         state = 1 if i < target else 0
         write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
 
 def set_camera_power(enabled=True):
-    """Enable or disable hardware power to the webcam sensor on Lenovo."""
     write_sysfs("/sys/devices/pci*/**/VPC2004:00/camera_power", 1 if enabled else 0)
 
 def launch_user_terminal(banner_title):
-    """Spawn a user terminal showing the new banner if requested."""
     terminal_wanted = (
         "--terminal" in sys.argv
         or "-t" in sys.argv
@@ -154,8 +133,7 @@ def launch_user_terminal(banner_title):
         if os.path.exists(cfg_file):
             try:
                 with open(cfg_file) as f:
-                    cfg = json.load(f)
-                    terminal_wanted = cfg.get("always_spawn_terminal", False)
+                    terminal_wanted = json.load(f).get("always_spawn_terminal", False)
             except Exception:
                 pass
 
@@ -187,12 +165,10 @@ def set_pcie_aspm(policy="default"):
     write_sysfs("/sys/module/pcie_aspm/parameters/policy", policy)
 
 def set_keyboard_backlight_max():
-    """Ensure keyboard backlight stays locked at 100% (level 2 of 2)."""
     write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
 
 def set_mic_mute(mute=False):
-    action = "mute" if mute else "unmute"
-    run_cmd(f"amixer set Capture {action}")
+    run_cmd(f"amixer set Capture {'mute' if mute else 'unmute'}")
 
 def set_aux_services(enable=True):
     services = ["cups", "cups-browsed", "ModemManager"]
@@ -201,33 +177,10 @@ def set_aux_services(enable=True):
         manage_service(s, action)
 
 def start_dev_stack():
-    """Ensure MongoDB and Ollama services are active."""
     for s in ["mongod", "mongodb", "ollama"]:
         manage_service(s, "start")
 
-def get_cpu_utilization():
-    """Sample overall CPU busy percentage over a short interval (0.2s)."""
-    def read_stat():
-        with open("/proc/stat", "r") as f:
-            fields = [float(x) for x in f.readline().strip().split()[1:8]]
-        idle = fields[3] + fields[4]
-        total = sum(fields)
-        return idle, total
-
-    try:
-        idle1, total1 = read_stat()
-        time.sleep(0.2)
-        idle2, total2 = read_stat()
-        diff_idle = idle2 - idle1
-        diff_total = total2 - total1
-        if diff_total <= 0:
-            return 0.0
-        return max(0.0, min(100.0, 100.0 * (1.0 - (diff_idle / diff_total))))
-    except Exception:
-        return 0.0
-
 def get_prime_tiers():
-    """Return all valid prime core counts up to machine capacity."""
     total_hw = get_total_cores()
     all_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
     primes = [p for p in all_primes if p <= total_hw]
@@ -236,17 +189,12 @@ def get_prime_tiers():
     return sorted(list(set(primes)))
 
 def apply_prime(prime_count):
-    """
-    Apply precise prime core stepping (e.g. 2 -> 31) across available threads.
-    Calculates operational capacity percentage and tunes governor/limits accordingly.
-    """
     total_threads = get_total_cores()
     prime_count = min(max(prime_count, 1), total_threads)
     pct = round((prime_count / total_threads) * 100)
 
     print(f"[*] Shifting to Prime P:{prime_count} ({prime_count}/{total_threads} Cores Online / ~{pct}%)")
 
-    # Hardware fundamentals
     set_keyboard_backlight_max()
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
@@ -257,10 +205,8 @@ def apply_prime(prime_count):
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Core allocation
     set_cpu_cores(count=prime_count)
 
-    # Power tuning by percentage capacity
     if pct <= 25:
         set_platform_profile("low-power")
         set_cpu_governor("powersave", epp="power")
@@ -291,58 +237,11 @@ def apply_prime(prime_count):
     print(f"[✓] Tuned to P:{prime_count} (~{pct}% capacity).")
     launch_user_terminal(f"P:{prime_count} ({prime_count} Cores / ~{pct}%)")
 
-def run_prime_scaling_loop(interval=2.0, min_cores=2, max_cores=None):
-    """
-    Dynamic auto-scaling loop adjusting prime core steps based on live CPU load.
-    """
-    primes = get_prime_tiers()
-    primes = [p for p in primes if p >= min_cores]
-    if max_cores:
-        primes = [p for p in primes if p <= max_cores]
-
-    curr_idx = 0
-    curr_cores = primes[curr_idx]
-    apply_prime(curr_cores)
-    save_active_state(f"P:{curr_cores}")
-    print(f"[*] Prime Core Loop active. Tiers: {primes}. Current: P:{curr_cores}")
-
-    consecutive_low = 0
-    try:
-        while True:
-            util = get_cpu_utilization()
-            if util > 65.0:
-                consecutive_low = 0
-                if curr_idx < len(primes) - 1:
-                    step = 2 if (util > 85.0 and curr_idx + 2 < len(primes)) else 1
-                    curr_idx = min(curr_idx + step, len(primes) - 1)
-                    curr_cores = primes[curr_idx]
-                    apply_prime(curr_cores)
-                    save_active_state(f"P:{curr_cores}")
-                    print(f"[!] Spike ({util:.1f}% load)! Shifted up to P:{curr_cores}")
-            elif util < 25.0:
-                consecutive_low += 1
-                if consecutive_low >= 3:
-                    consecutive_low = 0
-                    if curr_idx > 0:
-                        curr_idx -= 1
-                        curr_cores = primes[curr_idx]
-                        apply_prime(curr_cores)
-                        save_active_state(f"P:{curr_cores}")
-                        print(f"[-] Calm ({util:.1f}% load). Shifted down to P:{curr_cores}")
-            else:
-                consecutive_low = 0
-
-            time.sleep(interval)
-    except KeyboardInterrupt:
-        print("\n[*] Prime scaling loop stopped.")
-
 STATE_FILE = "/var/run/changestate.state"
 TELEMETRY_LOG = "/var/log/changestate_telemetry.jsonl"
 
 def collect_telemetry_snapshot(target_tier):
-    """Capture hardware snapshot for state transitions."""
     now_iso = datetime.now(timezone.utc).isoformat()
-
     freqs = []
     for fpath in sorted(glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq")):
         try:
@@ -370,24 +269,6 @@ def collect_telemetry_snapshot(target_tier):
     except Exception:
         pass
 
-    load_avg = []
-    try:
-        with open("/proc/loadavg", "r") as f:
-            load_avg = [float(x) for x in f.read().strip().split()[:3]]
-    except Exception:
-        pass
-
-    sensors_data = {}
-    try:
-        res = subprocess.run("sensors -j", shell=True, capture_output=True, text=True)
-        if res.returncode == 0 and res.stdout.strip():
-            raw = res.stdout.strip()
-            brace_pos = raw.find("{")
-            if brace_pos != -1:
-                sensors_data = json.loads(raw[brace_pos:])
-    except Exception:
-        pass
-
     battery = {}
     try:
         with open("/sys/class/power_supply/BAT0/capacity", "r") as f:
@@ -404,9 +285,7 @@ def collect_telemetry_snapshot(target_tier):
         "cpu_khz": freqs,
         "mem_used_mb": mem_used_mb,
         "mem_total_mb": mem_total_mb,
-        "load": load_avg,
-        "battery": battery,
-        "sensors": sensors_data
+        "battery": battery
     }
 
     json_line = json.dumps(doc)
@@ -505,12 +384,11 @@ def main():
     primes = get_prime_tiers()
 
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
-        print("Usage: changestate <prime_or_command>")
+        print("Usage: changestate <prime_gear>")
         print("\nAvailable gears:")
         for p in primes:
             pct = round((p / total_hw) * 100)
             print(f"  p{p:<3} - P:{p} ({p}/{total_hw} cores / ~{pct}%)")
-        print("  loop   - Run dynamic load-scaling loop across prime gears")
         print("  status - Show current active gear & hardware state")
         sys.exit(0)
 
@@ -520,11 +398,6 @@ def main():
         show_status()
         return
 
-    if target == "loop":
-        run_prime_scaling_loop()
-        return
-
-    # Check for prime target syntax: p2, p3, p5, p7, p11... or integer
     prime_val = None
     if target.startswith("p") and target[1:].isdigit():
         prime_val = int(target[1:])
@@ -539,8 +412,8 @@ def main():
         run_cmd(f'notify-send "Gear Shifted" "P:{prime_val} (~{pct}% Capacity)" -i preferences-system-power')
         return
 
-    print(f"Error: Unknown gear or command '{target}'")
-    print(f"Choices: {', '.join([f'p{p}' for p in primes])}, loop, status")
+    print(f"Error: Unknown gear '{target}'")
+    print(f"Choices: {', '.join([f'p{p}' for p in primes])}, status")
     sys.exit(1)
 
 if __name__ == "__main__":
