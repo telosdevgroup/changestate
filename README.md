@@ -6,15 +6,21 @@
 
 ---
 
-## Universal Tiers
+## Universal Tiers & The "1, 2, 5 Law"
 
-| Tier | Cores & Clocks | GPU Clock | Radios / Sensors | Purpose |
-| :--- | :--- | :--- | :--- | :--- |
-| **`server`** | 2–4 Cores base @ 2.8 GHz cap (Boost OFF) | Floor (200 MHz) | Wi-Fi/Eth ON, BT OFF, mic MUTED, camera OFF, bloat paused | Ultra low-wattage server mode. Fluid XFCE/Cinnamon terminal log viewing with prime core spike scaling loop (`--loop`) |
-| **`mom`** *(Metal Over Moss)* | 1 Core (Core 0 only) @ ~1.1 GHz | Floor (200 MHz / 300 MHz) | All RF cut (`rfkill block all`), webcam sensor OFF, mic MUTED, mDNS stopped, incoming firewall locked | Emergency defense / air-gapped / absolute stealth |
-| **`lowlow`** | 4 Cores @ 1.6 GHz cap (Boost OFF) | Floor | Wi-Fi ON, Bluetooth OFF, audio codec sleep, PCIe ASPM `powersupersave`, bloat daemons paused | Extreme battery sipping, silent fanless daily driver |
-| **`mid`** | 50% of available cores with Boost | Floor | Wi-Fi ON, balanced profile, dev stack started | Snappy balanced daily workload |
-| **`eleven`** | 100% of cores uncapped (Boost ON) | Unlocked Auto | Wi-Fi ON, performance profile, full stack running | Cranked to 11 / maximum throughput / full blast |
+The tier hierarchy follows the **1, 2, 5 Law** of proportional envelopes (similar to standard electronic decade steps) combined with **Prime Number Core Allocation** (`cores > threads`, rounded to the nearest prime):
+
+* **Avoiding Hyperthreading Contention:** Allocating physical cores cleanly avoids cache thrashing and sibling thread contention.
+* **Breaking Harmonic Resonance:** Typical power-of-two thread pools (2, 4, 8, 16) create lock-step scheduling bottlenecks when concurrent workers compete on hash rings or I/O queues. Prime allocations break harmonic CPU contention naturally.
+* **Preserving Dedicated Services:** Low-power states maintain non-negotiable responsiveness for network services (e.g. HTTP servers on port 8004, terminal loops, Cinnamon event loop) without dropping packets or stalling.
+
+| Tier | Level / Ratio | Physical Cores (Formula) | Clocks & Thermals | Radios & Services | Target Behavior |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`mom`** *(Metal Over Moss)* | **`0`** (Floor / ~10%) | Floor prime: **2** (or 3) cores | ~800MHz floor, Boost OFF, EPP `power` | All RF cut/air-gapped, mic MUTED, mDNS stopped, incoming locked | Shrink to moss, encased in metal. Absolute floor, silent, terminal + net alive, Cinnamon idle. |
+| **`lowlow`** | **`1`** (~20% envelope) | 20% capped prime: **5** cores | 1.6 GHz cap, Boost OFF | Wi-Fi ON, Bluetooth OFF, audio codec sleep, PCIe ASPM `powersupersave` | Extreme battery sipping, silent fanless daily driver. |
+| **`server`** | **`2`** (~40% envelope) | 40% target prime: **11** cores | 2.8 GHz cap, Boost OFF | Wi-Fi/Eth ON, BT OFF, mic MUTED, camera OFF, bloat paused | Ultra low-wattage sustained throughput. Fluid terminal log viewing with prime core spike scaling loop. |
+| **`mid`** *(Power Eco)* | **`3.5–4`** (~70–80%) | High-efficiency prime: **17** or **19** cores | Boost ON, EPP `balance_power` | Wi-Fi ON, balanced profile, dev stack active | "Flash High" mode: all capabilities (AVX, turbo) active, but biased strictly at the voltage efficiency sweet-spot. |
+| **`eleven`** | **`5`** (100% envelope) | Full unconstrained: **23** cores / 100% | Boost ON, max governor, auto fan ramp | Full stack running, uninhibited throughput | Cranked to 11. Full unconstrained hardware capacity. |
 
 *Note: Keyboard backlight is locked at 100% across all states. Antigravity AI assistant is preserved across all states.*
 

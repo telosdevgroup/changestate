@@ -1,0 +1,28 @@
+{
+  "general-section": {
+    "type": "section",
+    "description": "General Preferences"
+  },
+  "always-spawn-terminal": {
+    "type": "switch",
+    "default": false,
+    "description": "Always start a terminal window on state change",
+    "tooltip": "When enabled, automatically launches a new terminal showing the active state persona banner and prompt."
+  },
+  "mom-defense-section": {
+    "type": "section",
+    "description": "Emergency Air-Gapped Defense (MOM)"
+  },
+  "allow-mom-trigger": {
+    "type": "switch",
+    "default": false,
+    "description": "Unlock MOM (Metal Over Moss) emergency trigger",
+    "tooltip": "Check this box to confirm authorization before engaging defensive air-gapped lockdown."
+  },
+  "mom-lockdown-button": {
+    "type": "button",
+    "description": "Engage MOM Lockdown Now",
+    "callback": "on_mom_triggered",
+    "dependency": "allow-mom-trigger=true"
+  }
+}

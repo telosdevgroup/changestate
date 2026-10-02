@@ -11,6 +11,9 @@ import sys
 import os
 import glob
 import subprocess
+import json
+import time
+from datetime import datetime, timezone
 
 def run_cmd(cmd):
     """Run a shell command silently; ignore non-fatal errors."""
@@ -47,7 +50,7 @@ def set_platform_profile(profile):
     """Set ACPI platform profile (low-power, balanced, performance) if supported."""
     write_sysfs("/sys/firmware/acpi/platform_profile", profile)
 
-def set_cpu_governor(governor):
+def set_cpu_governor(governor, epp=None):
     """Set CPU frequency scaling governor and energy_performance_preference across all cores."""
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
     epp_map = {
@@ -56,7 +59,7 @@ def set_cpu_governor(governor):
         "balanced": "balance_performance",
         "balance_power": "balance_power"
     }
-    epp_val = epp_map.get(governor, "default")
+    epp_val = epp if epp is not None else epp_map.get(governor, "default")
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
 
 def set_cpu_boost(enabled):
@@ -96,20 +99,32 @@ def set_gpu_power_level(level):
     """
     Set GPU dynamic power management level for AMD Radeon and NVIDIA:
     - AMD: power_dpm_force_performance_level ('low', 'auto')
-    - NVIDIA: nvidia-smi clock locks and power management
+    - NVIDIA: nvidia-smi power limits and clock locks
     """
     # 1. AMD Radeon GPUs
     write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
 
     # 2. NVIDIA GPUs
     if has_nvidia_gpu():
-        if level == "low":
-            # Lock NVIDIA GPU clocks down to power-saving floor (e.g., 300MHz)
-            run_cmd("nvidia-smi -lgc 300,600")
+        if level in ("low", "lowlow"):
+            # Cap power limit to 31W and lock GPU clocks to power-saving floor
+            run_cmd("nvidia-smi -pl 31")
+            run_cmd("nvidia-smi -lgc 210,600")
+            run_cmd("nvidia-smi --auto-boost-permission=0")
+        elif level in ("four", "4", "cruise", "dev"):
+            # 4x Cruising: Generous 70W ceiling, unlocked dynamic clocks without auto-boost spikes
+            run_cmd("nvidia-smi -rgc")
+            run_cmd("nvidia-smi -pl 70")
+            run_cmd("nvidia-smi --auto-boost-permission=0")
+        elif level == "mid":
+            # Moderate wattage cap (e.g. 50W) and relaxed clocks
+            run_cmd("nvidia-smi -pl 50")
+            run_cmd("nvidia-smi -lgc 300,1000")
             run_cmd("nvidia-smi --auto-boost-permission=0")
         else:
-            # Reset NVIDIA GPU clocks back to unlocked dynamic scaling
+            # Eleven / max performance: Cap strictly at 97W (never 115W/130W)
             run_cmd("nvidia-smi -rgc")
+            run_cmd("nvidia-smi -pl 97")
             run_cmd("nvidia-smi --auto-boost-permission=1")
 
 def manage_service(service_name, action):
@@ -153,7 +168,27 @@ def set_firewall_lockdown(enable=False):
         run_cmd("sudo ufw enable")
 
 def launch_user_terminal(persona_title):
-    """Spawn a user terminal showing the new persona banner and prompt in XFCE / Cinnamon."""
+    """Spawn a user terminal showing the new persona banner and prompt if requested."""
+    # Check if requested via CLI flag, environment variable, or applet config
+    terminal_wanted = (
+        "--terminal" in sys.argv
+        or "-t" in sys.argv
+        or os.environ.get("CHANGESTATE_TERMINAL") == "1"
+    )
+    if not terminal_wanted:
+        # Check ~/.config/changestate/config.json if present
+        cfg_file = os.path.expanduser("~dev/.config/changestate/config.json")
+        if os.path.exists(cfg_file):
+            try:
+                with open(cfg_file) as f:
+                    cfg = json.load(f)
+                    terminal_wanted = cfg.get("always_spawn_terminal", False)
+            except Exception:
+                pass
+
+    if not terminal_wanted:
+        return
+
     target_user = os.environ.get("SUDO_USER") or "dev"
     display = os.environ.get("DISPLAY") or ":0"
     dbus = "unix:path=/run/user/1000/bus"
@@ -259,20 +294,14 @@ def set_tray_icons(enable=True):
 def purge_heavy_stacks():
     """Immediately terminate heavy services, databases, game clients, and runtimes."""
     stacks = [
-        "docker", "containerd", "ollama", "mongod", "mongodb",
+        "docker", "containerd", "mongod", "mongodb",
         "redis-server", "redis", "celery"
     ]
     for s in stacks:
         manage_service(s, "stop")
 
-    # Patterns of processes to kill on sight (browsers, games, launchers, heavy stacks)
-    # NOTE: Antigravity is explicitly preserved across all states!
+    # Patterns of processes to kill on sight (only in MOM emergency lockdown)
     kill_patterns = [
-        "google-chrome",
-        "chrome",
-        "chromium",
-        "brave",
-        "firefox",
         "steam",
         "steamwebhelper",
         "Battle.net",
@@ -281,15 +310,11 @@ def purge_heavy_stacks():
         "tsm",
         "TSM",
         "TradeSkillMaster",
-        "ollama",
-        "mongod",
-        "mongodb",
         "redis-server",
         "redis",
         "celery",
         "postgres",
-        "mysqld",
-        "node"
+        "mysqld"
     ]
     for p in kill_patterns:
         run_cmd(f"sudo pkill -9 -i -f {p}")
@@ -359,26 +384,27 @@ def apply_lowlow():
     set_aux_services(enable=False)  # Kill CUPS, modemmanager
     set_keyboard_backlight_max()    # Keep backlight at 100%
 
-    # 3. Platform profile & CPU governor + Hard downclock to 1.6 GHz base across 4 cores
-    set_cpu_cores(count=4)
+    # 3. Platform profile & CPU governor + Hard downclock to 1.6 GHz base across 6 cores (1x ~20% envelope)
+    set_cpu_cores(count=6)
     set_platform_profile("low-power")
-    set_cpu_governor("powersave")
+    set_cpu_governor("powersave", epp="power")
     set_cpu_boost(False)
     set_cpu_freq_cap(1600000)  # Hard cap at 1.6 GHz
 
-    # 4. Force GPU to lowest clock tier (200-400 MHz)
+    # 4. Force GPU to lowest 1x clock tier and 31W cap
     set_gpu_power_level("low")
 
-    # 5. Stop heavy background services if active
-    purge_heavy_stacks()
+    # 5. Services: Ensure MongoDB stays active
+    manage_service("mongod", "start")
     print("[-] Radios: Wi-Fi ON, Bluetooth OFF")
     print("[-] Platform Profile: low-power")
-    print("[-] CPU: powersave (4 threads online, Hard cap @ 1.6 GHz, Turbo Boost OFF)")
-    print("[-] GPU: Low-power state forced (200-400 MHz)")
+    print("[-] CPU: 6 threads (1x baseline ~20%), Hard cap @ 1.6 GHz, Turbo Boost OFF, EPP power")
+    print("[-] GPU: Low-power 1x state forced (31W ceiling, 210-600 MHz floor)")
     print("[-] PCIe & Audio: Link powersupersave, audio codec sleep active")
-    print("[-] Services: CUPS & ModemManager paused")
+    print("[-] Services: MongoDB active (CUPS & ModemManager paused)")
     print("[-] Backlight: Keyboard locked at 100%")
-    print("[✓] System is in lowlow battery-sipping mode.")
+    print("[✓] System is in LOWLOW (1x / ~20% baseline, server-ready) mode.")
+    launch_user_terminal("LowLow (6 Cores / 1.6GHz / 31W GPU / Server)")
 def get_cpu_utilization():
     """Sample overall CPU busy percentage over a short interval (0.2s)."""
     import time
@@ -477,15 +503,15 @@ def apply_server(daemon_mode=False):
     set_aux_services(enable=False)
     set_tray_icons(enable=False)
 
-    # 3. GPU floor: 200 MHz floor keeps display & colored terminal 100% smooth, cuts wattage to minimum
-    set_gpu_power_level("low")
+    # 3. GPU: 2x envelope (50W cap, moderate clocks)
+    set_gpu_power_level("mid")
 
-    # 4. CPU Base: 8 threads / 4 physical cores (Half the CPU for ideal server throughput + deep idle sleep)
-    set_cpu_cores(count="half")
-    set_platform_profile("low-power")
-    set_cpu_governor("powersave")
+    # 4. CPU Base: 12 threads (2x LowLow: ~40% envelope, 2.6 GHz cool cap, balance_power)
+    set_cpu_cores(count=12)
+    set_platform_profile("balanced")
+    set_cpu_governor("powersave", epp="balance_power")
     set_cpu_boost(False)
-    set_cpu_freq_cap(1600000)  # 1.6 GHz cool cap to prevent thermal ramps
+    set_cpu_freq_cap(2600000)  # 2.6 GHz cap keeps thermals chill while doubling compute
 
     # 5. Background stacks: pause bloat but ensure MongoDB for the web server stays active
     manage_service("docker", "stop")
@@ -494,19 +520,19 @@ def apply_server(daemon_mode=False):
 
     print("[-] Radios      : Wi-Fi/Ethernet ON, Bluetooth OFF")
     print("[-] Sensors     : Webcam OFF, Microphone MUTED")
-    print("[-] GPU State   : Forced Low (200 MHz floor, XFCE/Terminal buttery smooth)")
+    print("[-] GPU State   : 2x Mid power cap (50W ceiling, smooth terminal & displays)")
     print("[-] PCIe & Audio: Powersupersave & audio sleep active")
-    print("[-] CPU Base    : EPP power, Turbo Boost OFF, 1.6 GHz cap (efficient & responsive)")
-    print("[-] Cores       : 8 Threads (Half CPU: 4 physical Zen 3+ cores active)")
-    print("[✓] Server power-down profile active.")
-    launch_user_terminal("Server Log Watcher (8 Threads / 1.6GHz / Balanced Server)")
+    print("[-] CPU Base    : EPP balance_power, Turbo Boost OFF, 2.6 GHz cap")
+    print("[-] Cores       : 12 Threads (2x LowLow / ~40% envelope)")
+    print("[✓] System is in SERVER (2x / ~40% envelope) mode.")
+    launch_user_terminal("Server Log Watcher (12 Threads / 2.6GHz / 2x Envelope)")
 
     if daemon_mode:
         print("[*] Launching dynamic prime-numbered core scaling loop...")
-        run_prime_scaling_loop(interval=2.0, min_cores=2, max_cores=None)
+        run_prime_scaling_loop(interval=2.0, min_cores=4, max_cores=17)
 
-def apply_mid():
-    print("[*] Applying persona: MID (minimal balanced power)")
+def apply_four():
+    print("[*] Applying persona: FOUR (4x Cruising / 24 Cores / 70W GPU / No Nitrous Spikes)")
     # Restore camera, mic, services, tray applets
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
@@ -520,30 +546,31 @@ def apply_mid():
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Balanced profile + half cores online to sip power
+    # 4x Allocation: 24 cores online (75% of 32 threads)
     set_platform_profile("balanced")
-    set_cpu_cores(count="half")
-    set_cpu_governor("powersave")
-    set_cpu_boost(True)
+    set_cpu_cores(count=24)
+    # powersave + balance_performance keeps everything snappy without screaming
+    set_cpu_governor("powersave", epp="balance_performance")
+    set_cpu_boost(False)  # Boost OFF: Prevents the 5GHz nitrous spikes and fan ramps every 10s
     set_cpu_freq_cap(None)
 
-    # Minimal GPU (keep GPU down at lowest clock floor)
-    set_gpu_power_level("low")
+    # GPU: 4x Cruising envelope (70W ceiling, unlocked dynamic clocks, auto-boost OFF)
+    set_gpu_power_level("four")
 
-    # Start dev stack
+    # Keep dev & LLM stack active
     start_dev_stack()
 
     print("[-] Radios: Wi-Fi ON, Bluetooth OFF")
     print("[-] Platform Profile: balanced")
-    print("[-] CPU: powersave (50% cores active, Boost ON)")
-    print("[-] GPU: Low / minimal power state (200 MHz floor)")
+    print("[-] CPU: 24 threads active (4x baseline), Boost OFF (chill fans, smooth sustained compute)")
+    print("[-] GPU: 4x Cruising ceiling (70W cap, dynamic clocks unlocked, auto-boost OFF)")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
-    print("[✓] System is in minimal-power mid mode.")
-    launch_user_terminal("Mid (50% Cores / Balanced / Dev Stack)")
+    print("[✓] System is in FOUR (4x Cruising / Dev & Gaming / Calm Fans) mode.")
+    launch_user_terminal("Four (24 Cores / 70W GPU / Steady Dev & Gaming)")
 
 def apply_eleven():
-    print("[*] Applying persona: ELEVEN (cranked to eleven / maximum throughput)")
+    print("[*] Applying persona: ELEVEN (5x Open Throttle / Full Hardware / Fans Auto-Managed)")
     # Restore full hardware & tray applets
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
@@ -557,14 +584,14 @@ def apply_eleven():
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Performance profile + ALL cores online + unlocked clock speeds
+    # Performance profile + ALL 32 cores online + unlocked clock speeds (5x baseline)
     set_platform_profile("performance")
-    set_cpu_cores(count=None)  # Restore 100% of cores
-    set_cpu_governor("performance")
+    set_cpu_cores(count=None)  # Restore 100% of cores (32 threads)
+    set_cpu_governor("performance", epp="performance")
     set_cpu_boost(True)
     set_cpu_freq_cap(None)  # Full clock headroom
 
-    # GPU: Unlocked dynamic scaling
+    # GPU: 5x envelope strictly capped at 97W (never 115W/130W) with unlocked clocks
     set_gpu_power_level("auto")
 
     # Ensure AI & Database stack is up
@@ -572,16 +599,254 @@ def apply_eleven():
 
     print("[-] Radios: Wi-Fi ON")
     print("[-] Platform Profile: performance")
-    print("[-] CPU: performance (ALL threads active + Turbo Boost ON)")
-    print("[-] GPU: Unlocked Auto scaling")
+    print("[-] CPU: performance (All 32 threads active, Turbo Boost ON, EPP performance)")
+    print("[-] GPU: 5x Max Ceiling (97W cap, dynamic auto scaling, fans self-managed)")
     print("[-] Services: MongoDB, Ollama active")
     print("[-] Backlight: Keyboard locked at 100%")
-    print("[✓] System is cranked to ELEVEN.")
+    print("[✓] System is in ELEVEN (5x Open Throttle, 32 threads, 97W ceiling, auto fans).")
     launch_user_terminal("Eleven (All Cores / Turbo Unlocked / Full GPU)")
+
+def apply_prime(prime_count):
+    """
+    Apply precise prime number core stepping (2 -> 31) across available threads.
+    Calculates operational capacity percentage and tunes governor/limits accordingly.
+    """
+    print(f"[*] Applying Prime Persona: P:{prime_count} ({prime_count} Cores Online)")
+    set_keyboard_backlight_max()
+    run_cmd("rfkill unblock wifi")
+    set_radios(wifi=True, bluetooth=False)
+
+    total_threads = get_total_cores()
+    pct = round((prime_count / max(total_threads - 1, 1)) * 100)
+
+    # Core allocation
+    set_cpu_cores(count=prime_count)
+
+    if prime_count <= 3:
+        set_platform_profile("low-power")
+        set_cpu_governor("powersave", epp="power")
+        set_cpu_boost(False)
+        set_gpu_power_level("lowlow")
+    elif prime_count <= 11:
+        set_platform_profile("balanced")
+        set_cpu_governor("powersave", epp="balance_power")
+        set_cpu_boost(False)
+        set_gpu_power_level("four")
+    elif prime_count <= 23:
+        set_platform_profile("balanced")
+        set_cpu_governor("powersave", epp="balance_performance")
+        set_cpu_boost(True)
+        set_gpu_power_level("four")
+    else:
+        set_platform_profile("performance")
+        set_cpu_governor("performance", epp="performance")
+        set_cpu_boost(True)
+        set_gpu_power_level("auto")
+
+    start_dev_stack()
+    print(f"[-] CPU: {prime_count} threads active (~{pct}% system capacity)")
+    print(f"[✓] System tuned to Prime {prime_count} (~{pct}% capacity).")
+    launch_user_terminal(f"Prime {prime_count} ({prime_count} Cores / ~{pct}%)")
+
 STATE_FILE = "/var/run/changestate.state"
+TELEMETRY_LOG = "/var/log/changestate_telemetry.jsonl"
+
+def collect_telemetry_snapshot(target_tier):
+    """
+    Capture high-density hardware and process telemetry snapshot for state transitions.
+    Writes JSON Lines to /var/log/changestate_telemetry.jsonl and ingests into MongoDB.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # 1. CPU Frequencies and Online Cores
+    freqs = []
+    for fpath in sorted(glob.glob("/sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq")):
+        try:
+            with open(fpath, "r") as f:
+                freqs.append(int(f.read().strip()))
+        except Exception:
+            pass
+
+    online_cores = "unknown"
+    try:
+        with open("/sys/devices/system/cpu/online", "r") as f:
+            online_cores = f.read().strip()
+    except Exception:
+        pass
+
+    # 2. Memory & Load
+    mem_total_mb, mem_used_mb = 0, 0
+    try:
+        res = subprocess.run("free -m", shell=True, capture_output=True, text=True)
+        for line in res.stdout.splitlines():
+            if line.startswith("Mem:"):
+                parts = line.split()
+                mem_total_mb = int(parts[1])
+                mem_used_mb = int(parts[2])
+                break
+    except Exception:
+        pass
+
+    load_avg = []
+    try:
+        with open("/proc/loadavg", "r") as f:
+            load_avg = [float(x) for x in f.read().strip().split()[:3]]
+    except Exception:
+        pass
+
+    # 3. Thermals & Fans (via sensors -j)
+    sensors_data = {}
+    try:
+        res = subprocess.run("sensors -j", shell=True, capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            # sensors -j may have non-JSON error lines before JSON
+            raw = res.stdout.strip()
+            brace_pos = raw.find("{")
+            if brace_pos != -1:
+                sensors_data = json.loads(raw[brace_pos:])
+    except Exception:
+        pass
+
+    # 4. Top 31+ CPU & RAM Process Snapshots (for deep pattern analysis & Granite 4.2 inferencing)
+    top_procs = []
+    try:
+        res = subprocess.run(
+            "ps -eo pid,ppid,user,%cpu,%mem,stat,time,comm,args --sort=-%cpu",
+            shell=True, capture_output=True, text=True
+        )
+        if res.returncode == 0:
+            lines = res.stdout.strip().splitlines()[1:33]  # Capture top 32 lines
+            for l in lines:
+                parts = l.split(None, 8)
+                if len(parts) >= 8:
+                    top_procs.append({
+                        "pid": int(parts[0]),
+                        "ppid": int(parts[1]),
+                        "user": parts[2],
+                        "cpu": float(parts[3]),
+                        "mem": float(parts[4]),
+                        "stat": parts[5],
+                        "time": parts[6],
+                        "comm": parts[7],
+                        "cmd": parts[8] if len(parts) > 8 else parts[7]
+                    })
+    except Exception:
+        pass
+
+    # 5. Comprehensive GPU Telemetry (NVIDIA & AMD)
+    gpus = []
+    # NVIDIA Discovery via nvidia-smi
+    if has_nvidia_gpu():
+        try:
+            q_fields = (
+                "name,driver_version,pstate,temperature.gpu,utilization.gpu,"
+                "utilization.memory,memory.total,memory.used,clocks.current.graphics,"
+                "clocks.current.memory,power.draw,power.limit,pcie.link.gen.current"
+            )
+            res = subprocess.run(
+                f"nvidia-smi --query-gpu={q_fields} --format=csv,noheader,nounits",
+                shell=True, capture_output=True, text=True
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                for line in res.stdout.strip().splitlines():
+                    p = [item.strip() for item in line.split(",")]
+                    if len(p) >= 12:
+                        def to_num(val, cast=float):
+                            try:
+                                return cast(val)
+                            except Exception:
+                                return None
+
+                        gpus.append({
+                            "vendor": "nvidia",
+                            "model": p[0],
+                            "driver": p[1],
+                            "pstate": p[2],
+                            "temp_c": to_num(p[3]),
+                            "util_gpu_pct": to_num(p[4]),
+                            "util_mem_pct": to_num(p[5]),
+                            "vram_total_mb": to_num(p[6], int),
+                            "vram_used_mb": to_num(p[7], int),
+                            "clk_gfx_mhz": to_num(p[8]),
+                            "clk_mem_mhz": to_num(p[9]),
+                            "power_w": to_num(p[10]),
+                            "power_limit_w": to_num(p[11]) if len(p) > 12 else None,
+                            "pcie_gen": to_num(p[-1], int)
+                        })
+        except Exception:
+            pass
+
+    # AMD / Radeon Discovery via sysfs
+    for card_dir in glob.glob("/sys/class/drm/card[0-9]/device"):
+        try:
+            vendor_path = os.path.join(card_dir, "vendor")
+            if os.path.exists(vendor_path):
+                with open(vendor_path, "r") as f:
+                    if f.read().strip() == "0x1002":
+                        def read_val(fname, cast=int, div=1):
+                            fpath = os.path.join(card_dir, fname)
+                            if os.path.exists(fpath):
+                                with open(fpath, "r") as fl:
+                                    return cast(fl.read().strip()) // div
+                            return 0
+
+                        vram_total = read_val("mem_info_vram_total", div=1048576)
+                        vram_used = read_val("mem_info_vram_used", div=1048576)
+                        gpu_busy = read_val("gpu_busy_percent")
+
+                        gpus.append({
+                            "vendor": "amd",
+                            "vram_total_mb": vram_total,
+                            "vram_used_mb": vram_used,
+                            "util_gpu_pct": gpu_busy
+                        })
+        except Exception:
+            pass
+
+    # 6. Battery Status
+    battery = {}
+    try:
+        with open("/sys/class/power_supply/BAT0/capacity", "r") as f:
+            battery["percent"] = int(f.read().strip())
+        with open("/sys/class/power_supply/BAT0/status", "r") as f:
+            battery["status"] = f.read().strip()
+    except Exception:
+        pass
+
+    # Assemble Document
+    doc = {
+        "timestamp": now_iso,
+        "tier": target_tier,
+        "online_cores": online_cores,
+        "cpu_khz": freqs,
+        "mem_used_mb": mem_used_mb,
+        "mem_total_mb": mem_total_mb,
+        "load": load_avg,
+        "gpus": gpus,
+        "battery": battery,
+        "top_procs": top_procs,
+        "sensors": sensors_data
+    }
+
+    # Write to /var/log/changestate_telemetry.jsonl
+    json_line = json.dumps(doc)
+    try:
+        with open(TELEMETRY_LOG, "a") as f:
+            f.write(json_line + "\n")
+    except PermissionError:
+        subprocess.run(f"echo '{json_line}' | sudo tee -a {TELEMETRY_LOG} > /dev/null", shell=True, check=False)
+    except Exception:
+        pass
+
+    # Optional Mongo Ingestion (localhost:27017 -> db: telemetry, collection: state_snapshots)
+    try:
+        mongo_cmd = f"mongosh --quiet --eval \"db.getSiblingDB('telemetry').state_snapshots.insertOne({json_line})\""
+        subprocess.run(mongo_cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=1.5)
+    except Exception:
+        pass
 
 def save_active_state(name):
-    """Record the active persona name to STATE_FILE."""
+    """Record the active persona name to STATE_FILE and log telemetry snapshot."""
     try:
         with open(STATE_FILE, "w") as f:
             f.write(name)
@@ -589,6 +854,9 @@ def save_active_state(name):
         subprocess.run(f"echo {name} | sudo tee {STATE_FILE} > /dev/null", shell=True, check=False)
     except Exception:
         pass
+
+    # Record telemetry snapshot
+    collect_telemetry_snapshot(name)
 
 def get_active_state():
     """Read the active persona name from STATE_FILE."""
@@ -642,6 +910,15 @@ def show_status():
         if gpu_nodes:
             with open(gpu_nodes[0], "r") as f:
                 print(f"GPU Power Level  : {f.read().strip()}")
+        elif has_nvidia_gpu():
+            res = subprocess.run(
+                "nvidia-smi --query-gpu=power.draw,power.limit,clocks.gr --format=csv,noheader",
+                shell=True, capture_output=True, text=True
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                parts = [p.strip() for p in res.stdout.strip().split(",")]
+                draw, limit, clock = parts[0], parts[1], parts[2]
+                print(f"GPU Status       : {draw} (Limit: {limit}, Clock: {clock})")
     except Exception:
         pass
 
@@ -655,28 +932,28 @@ def show_status():
         pass
 
 PERSONAS = {
-    "server": apply_server,
-    "mom": apply_mom,
     "lowlow": apply_lowlow,
-    "mid": apply_mid,
+    "four": apply_four,
     "eleven": apply_eleven,
-    # Aliases for backwards compatibility
-    "webdev": apply_mid,
+    "mom": apply_mom,
+    # Compatibility aliases
+    "4": apply_four,
+    "cruise": apply_four,
+    "dev": apply_four,
+    "mid": apply_four,
+    "server": apply_lowlow,
+    "webdev": apply_four,
     "inferencing": apply_eleven,
 }
 
 def main():
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
-        print("Usage: changestate <persona> [--loop]")
+        print("Usage: changestate <persona>")
         print("\nAvailable personas:")
-        print("  server   - LOW-WATTAGE SERVER: GPU low floor (~200MHz, flawless terminal logs),")
-        print("             4/2 cores base with 2.8GHz spike headroom, boost OFF, bloat purged.")
-        print("             Add --loop for infinite dynamic prime-numbered core scaling (2->3->5->7->11->13)")
-        print("  mom      - DEFENSE / ULTRA-QUIET: RF cut, camera dead, single core only,")
-        print("             firewall lockdown, daemons purged. Hardwired Ethernet only.")
-        print("  lowlow   - Low-power: Battery sipping, Wi-Fi ON, 1.6GHz CPU cap, GPU low, boost off")
-        print("  mid      - Balanced: Wi-Fi ON, half cores, boost on, minimal GPU")
-        print("  eleven   - Cranked to 11: All cores uncapped, GPU auto, full blast")
+        print("  lowlow   - 1x Baseline (~20%): 6 Cores @ 1.6GHz, GPU 31W floor, Turbo OFF, Server/Ollama safe")
+        print("  four     - 4x Cruising (75%): 24 Cores, GPU 70W, Turbo OFF, dev & gaming, chill fans (no nitrous)")
+        print("  eleven   - 5x Open Throttle (100%): 32 Cores uncapped, GPU 97W ceiling, auto fans, full blast")
+        print("  mom      - Defense / Submerged: RF cut, camera dead, 1 core only @ 1.1GHz, air-gapped")
         print("  status   - Show current active persona & hardware state")
         sys.exit(0)
 
@@ -686,17 +963,25 @@ def main():
         show_status()
         return
 
+    # Check for prime target syntax: p2, p3, p5, p7, p11, p13, p17, p19, p23, p29, p31 or just integer
+    prime_val = None
+    if target.startswith("p") and target[1:].isdigit():
+        prime_val = int(target[1:])
+    elif target.isdigit():
+        prime_val = int(target)
+
+    if prime_val is not None:
+        apply_prime(prime_val)
+        save_active_state(f"P:{prime_val}")
+        run_cmd(f'notify-send "State Changed" "Activated Prime P:{prime_val} persona" -i preferences-system-power')
+        return
+
     if target not in PERSONAS:
         print(f"Error: Unknown persona '{target}'")
         print(f"Choices: {', '.join(PERSONAS.keys())}")
         sys.exit(1)
 
-    daemon_mode = "--loop" in sys.argv or "-l" in sys.argv
-
-    if target == "server":
-        PERSONAS[target](daemon_mode=daemon_mode)
-    else:
-        PERSONAS[target]()
+    PERSONAS[target]()
 
     save_active_state(target)
     run_cmd(f'notify-send "State Changed" "Activated {target.upper()} persona" -i preferences-system-power')
