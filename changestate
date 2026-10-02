@@ -3,6 +3,7 @@
 changestate - Discrete Prime Core Stepping & Hardware Power Management
 Operates strictly via Prime Cores + Percentage Capacity:
   P:2, P:3, P:5, P:7, P:11, P:13, P:17, P:19, P:23, P:29, P:31
+Features proportional fan capping matched to prime capacity percentage.
 """
 
 import sys
@@ -86,7 +87,7 @@ def set_cpu_freq_cap(max_khz=None):
             max_khz = 5000000
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
 
-def set_gpu_power_level(level):
+def set_gpu_power_level(level, pct=100):
     """Set GPU dynamic power management level for AMD Radeon and NVIDIA."""
     write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
     if has_nvidia_gpu():
@@ -102,6 +103,40 @@ def set_gpu_power_level(level):
             run_cmd("nvidia-smi -rgc")
             run_cmd("nvidia-smi -pl 97")
             run_cmd("nvidia-smi --auto-boost-permission=1")
+
+def set_fan_speed_cap(pct):
+    """
+    Cap cooling fans proportionally to prime capacity percentage across:
+    1. Lenovo EC fan modes (/sys/devices/pci*/**/VPC2004:00/fan_mode)
+    2. ACPI cooling device fan states (/sys/class/thermal/cooling_device*/cur_state)
+    3. Dedicated GPU fan target limits via nvidia-smi
+    """
+    # 1. Lenovo EC Fan Mode Control
+    # 5: Silent/Quiet profile, 0: Balanced curve, 1: Full performance
+    if pct <= 25:
+        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 5)
+    elif pct <= 75:
+        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 0)
+    else:
+        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 1)
+
+    # 2. Linux ACPI Thermal Fan Cooling Device Capping
+    for cdev in glob.glob("/sys/class/thermal/cooling_device*"):
+        try:
+            with open(os.path.join(cdev, "type"), "r") as f:
+                c_type = f.read().strip().lower()
+            if "fan" in c_type:
+                with open(os.path.join(cdev, "max_state"), "r") as f:
+                    max_s = int(f.read().strip())
+                target_state = max(0, min(max_s, round((pct / 100.0) * max_s)))
+                write_sysfs(os.path.join(cdev, "cur_state"), target_state)
+        except Exception:
+            pass
+
+    # 3. NVIDIA Fan Speed Target Capping (if supported by vBIOS)
+    if has_nvidia_gpu():
+        fan_target = max(20, min(100, pct))
+        run_cmd(f"nvidia-smi -i 0 --set-gpu-fan-speed={fan_target}")
 
 def manage_service(service_name, action):
     run_cmd(f"sudo systemctl {action} {service_name}")
@@ -205,35 +240,41 @@ def apply_prime(prime_count):
     run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
+    # Core allocation
     set_cpu_cores(count=prime_count)
 
+    # Power tuning by percentage capacity
     if pct <= 25:
         set_platform_profile("low-power")
         set_cpu_governor("powersave", epp="power")
         set_cpu_boost(False)
         set_cpu_freq_cap(1600000 if pct <= 15 else 2200000)
-        set_gpu_power_level("lowlow")
+        set_gpu_power_level("lowlow", pct=pct)
     elif pct <= 60:
         set_platform_profile("balanced")
         set_cpu_governor("powersave", epp="balance_power")
         set_cpu_boost(False)
         set_cpu_freq_cap(None)
-        set_gpu_power_level("mid")
+        set_gpu_power_level("mid", pct=pct)
     elif pct <= 85:
         set_platform_profile("balanced")
         set_cpu_governor("powersave", epp="balance_performance")
         set_cpu_boost(True)
         set_cpu_freq_cap(None)
-        set_gpu_power_level("four")
+        set_gpu_power_level("four", pct=pct)
     else:
         set_platform_profile("performance")
         set_cpu_governor("performance", epp="performance")
         set_cpu_boost(True)
         set_cpu_freq_cap(None)
-        set_gpu_power_level("auto")
+        set_gpu_power_level("auto", pct=pct)
+
+    # Cap fan curve / acoustics proportionally to prime percentage
+    set_fan_speed_cap(pct)
 
     start_dev_stack()
     print(f"[-] CPU: {prime_count} threads active (~{pct}% system capacity)")
+    print(f"[-] Fans: Capped proportionally to ~{pct}% acoustic/cooling tier")
     print(f"[✓] Tuned to P:{prime_count} (~{pct}% capacity).")
     launch_user_terminal(f"P:{prime_count} ({prime_count} Cores / ~{pct}%)")
 
@@ -353,6 +394,17 @@ def show_status():
     except Exception:
         pass
 
+    # Fan mode status
+    try:
+        fan_nodes = glob.glob("/sys/devices/pci*/**/VPC2004:00/fan_mode")
+        if fan_nodes:
+            with open(fan_nodes[0], "r") as f:
+                mode_map = {"5": "Silent / Quiet (≤25%)", "0": "Balanced / Cruising (≤75%)", "1": "Full Open Throttle (100%)"}
+                val = f.read().strip()
+                print(f"Fan Mode         : {mode_map.get(val, val)}")
+    except Exception:
+        pass
+
     try:
         gpu_nodes = glob.glob("/sys/class/drm/card*/device/power_dpm_force_performance_level")
         if gpu_nodes:
@@ -388,7 +440,7 @@ def main():
         print("\nAvailable gears:")
         for p in primes:
             pct = round((p / total_hw) * 100)
-            print(f"  p{p:<3} - P:{p} ({p}/{total_hw} cores / ~{pct}%)")
+            print(f"  p{p:<3} - P:{p} ({p}/{total_hw} cores / ~{pct}% / fan cap ~{pct}%)")
         print("  status - Show current active gear & hardware state")
         sys.exit(0)
 
@@ -409,7 +461,7 @@ def main():
         total_threads = get_total_cores()
         pct = round((min(prime_val, total_threads) / total_threads) * 100)
         save_active_state(f"P:{prime_val}")
-        run_cmd(f'notify-send "Gear Shifted" "P:{prime_val} (~{pct}% Capacity)" -i preferences-system-power')
+        run_cmd(f'notify-send "Gear Shifted" "P:{prime_val} (~{pct}% Capacity & Fan Cap)" -i preferences-system-power')
         return
 
     print(f"Error: Unknown gear '{target}'")
