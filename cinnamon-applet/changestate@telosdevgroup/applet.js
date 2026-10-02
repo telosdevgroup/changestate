@@ -91,8 +91,32 @@ class ChangeStateApplet extends Applet.TextIconApplet {
         this.menu.addMenuItem(statusItem);
     }
 
+    _getActiveCoreCount() {
+        try {
+            if (GLib.file_test("/sys/devices/system/cpu/online", GLib.FileTest.EXISTS)) {
+                let [ok, contents] = GLib.file_get_contents("/sys/devices/system/cpu/online");
+                if (ok) {
+                    let onlineStr = contents.toString().trim();
+                    let count = 0;
+                    for (let part of onlineStr.split(",")) {
+                        if (part.includes("-")) {
+                            let [start, end] = part.split("-").map(Number);
+                            count += (end - start + 1);
+                        } else if (part.length > 0) {
+                            count += 1;
+                        }
+                    }
+                    if (count > 0) return count;
+                }
+            }
+        } catch (e) {
+            // fallback
+        }
+        return null;
+    }
+
     _updateState() {
-        let state = "MANUAL";
+        let state = null;
         try {
             if (GLib.file_test(this._stateFile, GLib.FileTest.EXISTS)) {
                 let [ok, contents] = GLib.file_get_contents(this._stateFile);
@@ -101,7 +125,16 @@ class ChangeStateApplet extends Applet.TextIconApplet {
                 }
             }
         } catch (e) {
-            state = "MANUAL";
+            state = null;
+        }
+
+        if (!state) {
+            let activeCores = this._getActiveCoreCount();
+            if (activeCores) {
+                state = `P:${activeCores}`;
+            } else {
+                state = "AUTO";
+            }
         }
 
         if (state !== this._currentState) {
@@ -127,7 +160,7 @@ class ChangeStateApplet extends Applet.TextIconApplet {
             }
         } else {
             this.set_applet_icon_name("preferences-system-power");
-            this.set_applet_label(state.substring(0, 5));
+            this.set_applet_label(state);
             this.set_applet_tooltip(`ChangeState: ${state}`);
         }
     }
