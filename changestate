@@ -217,10 +217,8 @@ def start_dev_stack():
 
 def get_prime_tiers():
     total_hw = get_total_cores()
-    all_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
+    all_primes = [1, 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
     primes = [p for p in all_primes if p <= total_hw]
-    if total_hw not in primes and total_hw > 1:
-        primes.append(total_hw)
     return sorted(list(set(primes)))
 
 def apply_prime(prime_count):
