@@ -1,9 +1,33 @@
 #!/usr/bin/env python3
 """
-changestate - Discrete Prime Core Stepping & Hardware Power Management
-Operates strictly via Prime Cores + Percentage Capacity:
-  P:2, P:3, P:5, P:7, P:11, P:13, P:17, P:19, P:23, P:29, P:31
-Features proportional fan capping matched to prime capacity percentage.
+changestate - Percentage-based Hardware Governor across Universal Prime Gears
+
+Universal Prime Philosophy:
+  Every prime notch is a standardized, universal capacity percentage for EVERY machine:
+    P:2  = 6%   (Floor)
+    P:3  = 10%
+    P:5  = 16%
+    P:7  = 23%
+    P:11 = 35%
+    P:13 = 42%
+    P:17 = 55%
+    P:19 = 61%
+    P:23 = 75%  (The 75% Sweet Spot for dev & gaming everywhere)
+    P:29 = 93%
+    P:31 = 100% (Top gear)
+
+Dynamic Diagnostics & 80% Max Safety Clamp:
+  1. Auto-discovers machine specs: total CPU threads, min/max frequency, total RAM/Swap, GPU range.
+  2. Dynamically calculates active cores for the host: round((pct / 100) * total_cores).
+     - On a 8-core machine,  P:23 = 6 cores (75%).
+     - On a 16-core machine, P:23 = 12 cores (75%).
+     - On a 32-core machine, P:23 = 24 cores (75%).
+     - On a 128-core server, P:23 = 96 cores (75%).
+  3. Capped to 80% of silicon max:
+     Target Freq = min + (pct / 100) * (0.80 * max - min)
+     Even at 100% (P:31), clocks stop cleanly at 80% of max.
+  4. Auto/Turbo boost disabled: No sudden spikes, no fan whine.
+  5. BIOS fans left on auto: Safe thermal curve with zero board risk.
 """
 
 import sys
@@ -12,6 +36,21 @@ import glob
 import subprocess
 import json
 from datetime import datetime, timezone
+
+# Standardized Prime Percentage Map (Universal across all computers)
+UNIVERSAL_PRIME_PCT = {
+    2:  6,    # Floor (~6%)
+    3:  10,   # ~10%
+    5:  16,   # ~16%
+    7:  23,   # ~23%
+    11: 35,   # ~35%
+    13: 42,   # ~42%
+    17: 55,   # ~55%
+    19: 61,   # ~61%
+    23: 75,   # ~75% (The universal sweet spot)
+    29: 93,   # ~93%
+    31: 100   # 100% (mildly clamped at 80% of silicon max)
+}
 
 def run_cmd(cmd):
     """Run a shell command silently; ignore non-fatal errors."""
@@ -42,12 +81,123 @@ def has_nvidia_gpu():
     import shutil
     return shutil.which("nvidia-smi") is not None
 
-def set_platform_profile(profile):
-    """Set ACPI platform profile (low-power, balanced, performance) if supported."""
-    write_sysfs("/sys/firmware/acpi/platform_profile", profile)
+def discover_hardware():
+    """
+    Dynamically auto-discover hardware specifications of the current machine.
+    Zero hardcoded values.
+    """
+    # 1. Total CPU threads
+    cpu_nodes = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
+    total_cores = max(len(cpu_nodes), 1)
+
+    # 2. CPU Frequency Boundaries (kHz)
+    min_freqs, max_freqs = [], []
+    for p in glob.glob("/sys/devices/system/cpu/cpufreq/policy*"):
+        try:
+            with open(os.path.join(p, "cpuinfo_min_freq")) as f:
+                min_freqs.append(int(f.read().strip()))
+            with open(os.path.join(p, "cpuinfo_max_freq")) as f:
+                max_freqs.append(int(f.read().strip()))
+        except Exception:
+            pass
+    cpu_min_khz = min(min_freqs) if min_freqs else 800000
+    cpu_max_khz = max(max_freqs) if max_freqs else 3000000
+
+    # 3. RAM & Swap (MB)
+    mem_total_mb, swap_total_mb = 0, 0
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    mem_total_mb = int(line.split()[1]) // 1024
+                elif line.startswith("SwapTotal:"):
+                    swap_total_mb = int(line.split()[1]) // 1024
+    except Exception:
+        pass
+
+    # 4. GPU Discovery (NVIDIA & AMD)
+    gpu = {"vendor": "none", "min_clk_mhz": 0, "max_clk_mhz": 0}
+    if has_nvidia_gpu():
+        gpu["vendor"] = "nvidia"
+        try:
+            res = subprocess.run(["nvidia-smi", "-q", "-d", "SUPPORTED_CLOCKS"], capture_output=True, text=True)
+            if res.returncode == 0:
+                clocks = []
+                for l in res.stdout.splitlines():
+                    if "Graphics" in l:
+                        parts = l.split(":")
+                        if len(parts) == 2:
+                            clocks.append(int(parts[1].strip().split()[0]))
+                if clocks:
+                    gpu["min_clk_mhz"] = min(clocks)
+                    gpu["max_clk_mhz"] = max(clocks)
+        except Exception:
+            pass
+
+        # Fallback query if supported_clocks was restricted
+        if not gpu["max_clk_mhz"]:
+            try:
+                res = subprocess.run(["nvidia-smi", "--query-gpu=clocks.max.graphics", "--format=csv,noheader"], capture_output=True, text=True)
+                if res.returncode == 0 and res.stdout.strip().isdigit():
+                    gpu["max_clk_mhz"] = int(res.stdout.strip())
+                    gpu["min_clk_mhz"] = 210
+            except Exception:
+                pass
+
+    return {
+        "total_cores": total_cores,
+        "cpu_min_khz": cpu_min_khz,
+        "cpu_max_khz": cpu_max_khz,
+        "mem_total_mb": mem_total_mb,
+        "swap_total_mb": swap_total_mb,
+        "gpu": gpu
+    }
+
+def get_gears_metadata():
+    """Output universal gears metadata with machine-specific active core counts."""
+    hw = discover_hardware()
+    gears = []
+    for p, pct in UNIVERSAL_PRIME_PCT.items():
+        cores = max(1, round((pct / 100.0) * hw["total_cores"]))
+        label = f"P:{p} (~{pct}%)"
+        if p == 23:
+            label = f"P:23 (~75% Sweet Spot)"
+        elif p == 2:
+            label = f"P:2 (~6% Floor)"
+        elif p == 31:
+            label = f"P:31 (100% / Mild 80% Cap)"
+
+        gears.append({
+            "id": f"p{p}",
+            "prime": p,
+            "pct": pct,
+            "cores": cores,
+            "total_cores": hw["total_cores"],
+            "label": label
+        })
+    return gears
+
+def set_cpu_cores(target_count):
+    """Dynamically set the number of active CPU cores (Core 0 always online)."""
+    total = discover_hardware()["total_cores"]
+    target = min(max(target_count, 1), total)
+    for i in range(1, total):
+        state = 1 if i < target else 0
+        write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
+
+def set_cpu_boost(enabled):
+    """Enable or disable CPU turbo/boost across AMD and Intel CPUs."""
+    if is_intel_cpu():
+        write_sysfs("/sys/devices/system/cpu/intel_pstate/no_turbo", 0 if enabled else 1)
+    else:
+        write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+
+def set_cpu_freq_cap(max_khz):
+    """Cap max CPU frequency across all online cores."""
+    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
 
 def set_cpu_governor(governor, epp=None):
-    """Set CPU frequency scaling governor and energy_performance_preference across all cores."""
+    """Set CPU frequency scaling governor and energy_performance_preference."""
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
     epp_map = {
         "powersave": "power",
@@ -58,104 +208,62 @@ def set_cpu_governor(governor, epp=None):
     epp_val = epp if epp is not None else epp_map.get(governor, "default")
     write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
 
-def set_cpu_boost(enabled):
-    """Enable or disable CPU turbo/boost across AMD and Intel CPUs."""
-    if is_intel_cpu():
-        write_sysfs("/sys/devices/system/cpu/intel_pstate/no_turbo", 0 if enabled else 1)
+def set_gpu_clamp(ratio, hw):
+    """
+    Clamp GPU clocks proportionally to ratio, locked under 80% ceiling.
+    Auto-boost / Dynamic Boost strictly disabled.
+    """
+    if ratio <= 0.25:
+        write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", "low")
     else:
-        write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+        write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", "auto")
+
+    if hw["gpu"]["vendor"] == "nvidia":
+        # Always revoke auto-boost permission (no unexpected surges or fan ramps)
+        run_cmd("nvidia-smi --auto-boost-permission=0")
+        
+        g_min = hw["gpu"]["min_clk_mhz"]
+        g_max = hw["gpu"]["max_clk_mhz"]
+        if g_max > g_min:
+            # 80% maximum glass ceiling multiplier
+            g_ceiling = int(g_min + ratio * (0.80 * g_max - g_min))
+            run_cmd(f"nvidia-smi -lgc {g_min},{g_ceiling}")
+        else:
+            run_cmd("nvidia-smi -rgc")
+
+def set_memory_swappiness(ratio):
+    """
+    Dynamically tune swappiness and dirty cache ratio:
+    Low ratio: Aggressive flushing (cool RAM), low swappiness (minimize disk thrash).
+    High ratio: Generous page caching for fast batch tensor loading without swapping.
+    """
+    target_swap = max(1, int(10 - ratio * 9))
+    write_sysfs("/proc/sys/vm/swappiness", target_swap)
+
+    target_dirty = int(10 + ratio * 10)
+    write_sysfs("/proc/sys/vm/dirty_background_ratio", target_dirty)
 
 def set_radios(wifi=True, bluetooth=False):
     """Control Wi-Fi and Bluetooth using rfkill."""
-    if wifi:
-        run_cmd("rfkill unblock wifi")
-    else:
-        run_cmd("rfkill block wifi")
-
-    if bluetooth:
-        run_cmd("rfkill unblock bluetooth")
-    else:
-        run_cmd("rfkill block bluetooth")
-
-def set_cpu_freq_cap(max_khz=None):
-    """Cap max CPU frequency across all cores (or restore to hardware max)."""
-    if max_khz is None:
-        try:
-            with open("/sys/devices/system/cpu/cpufreq/policy0/cpuinfo_max_freq", "r") as f:
-                max_khz = f.read().strip()
-        except Exception:
-            max_khz = 5000000
-    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
-
-def set_gpu_power_level(level, pct=100):
-    """Set GPU dynamic power management level for AMD Radeon and NVIDIA."""
-    write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", level)
-    if has_nvidia_gpu():
-        if level in ("low", "lowlow"):
-            run_cmd("nvidia-smi -pl 31")
-            run_cmd("nvidia-smi -lgc 210,600")
-            run_cmd("nvidia-smi --auto-boost-permission=0")
-        elif level in ("four", "4", "cruise", "dev", "mid"):
-            run_cmd("nvidia-smi -rgc")
-            run_cmd("nvidia-smi -pl 70")
-            run_cmd("nvidia-smi --auto-boost-permission=0")
-        else:
-            run_cmd("nvidia-smi -rgc")
-            run_cmd("nvidia-smi -pl 97")
-            run_cmd("nvidia-smi --auto-boost-permission=1")
-
-def set_fan_speed_cap(pct):
-    """
-    Cap cooling fans proportionally to prime capacity percentage across:
-    1. Lenovo EC fan modes (/sys/devices/pci*/**/VPC2004:00/fan_mode)
-    2. ACPI cooling device fan states (/sys/class/thermal/cooling_device*/cur_state)
-    3. Dedicated GPU fan target limits via nvidia-smi
-    """
-    # 1. Lenovo EC Fan Mode Control
-    # 5: Silent/Quiet profile, 0: Balanced curve, 1: Full performance
-    if pct <= 25:
-        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 5)
-    elif pct <= 75:
-        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 0)
-    else:
-        write_sysfs("/sys/devices/pci*/**/VPC2004:00/fan_mode", 1)
-
-    # 2. Linux ACPI Thermal Fan Cooling Device Capping
-    for cdev in glob.glob("/sys/class/thermal/cooling_device*"):
-        try:
-            with open(os.path.join(cdev, "type"), "r") as f:
-                c_type = f.read().strip().lower()
-            if "fan" in c_type:
-                with open(os.path.join(cdev, "max_state"), "r") as f:
-                    max_s = int(f.read().strip())
-                target_state = max(0, min(max_s, round((pct / 100.0) * max_s)))
-                write_sysfs(os.path.join(cdev, "cur_state"), target_state)
-        except Exception:
-            pass
-
-    # 3. NVIDIA Fan Speed Target Capping (if supported by vBIOS)
-    if has_nvidia_gpu():
-        fan_target = max(20, min(100, pct))
-        run_cmd(f"nvidia-smi -i 0 --set-gpu-fan-speed={fan_target}")
-
-def manage_service(service_name, action):
-    run_cmd(f"sudo systemctl {action} {service_name}")
-
-def get_total_cores():
-    """Detect total number of CPU logical threads on the machine."""
-    nodes = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
-    return max(len(nodes), 1)
-
-def set_cpu_cores(count=None):
-    """Set the number of online CPU cores/threads dynamically (Core 0 always online)."""
-    total = get_total_cores()
-    target = min(max(count, 1), total) if isinstance(count, int) else total
-    for i in range(1, total):
-        state = 1 if i < target else 0
-        write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
+    run_cmd(f"rfkill {'unblock' if wifi else 'block'} wifi")
+    run_cmd(f"rfkill {'unblock' if bluetooth else 'block'} bluetooth")
 
 def set_camera_power(enabled=True):
     write_sysfs("/sys/devices/pci*/**/VPC2004:00/camera_power", 1 if enabled else 0)
+
+def set_mic_mute(mute=False):
+    run_cmd(f"amixer set Capture {'mute' if mute else 'unmute'}")
+
+def set_aux_services(enable=True):
+    services = ["cups", "cups-browsed", "ModemManager"]
+    action = "start" if enable else "stop"
+    for s in services:
+        run_cmd(f"sudo systemctl {action} {s}")
+
+def start_dev_stack():
+    """Ensure developmental databases and LLM servers stay alive."""
+    for s in ["mongod", "mongodb", "ollama"]:
+        run_cmd(f"sudo systemctl start {s}")
 
 def launch_user_terminal(banner_title):
     terminal_wanted = (
@@ -192,91 +300,94 @@ def launch_user_terminal(banner_title):
     )
     subprocess.Popen(cmd, shell=True)
 
-def set_audio_power_save(enable=True):
-    val = 1 if enable else 0
-    write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", val)
-
-def set_pcie_aspm(policy="default"):
-    write_sysfs("/sys/module/pcie_aspm/parameters/policy", policy)
-
-def set_keyboard_backlight_max():
-    write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
-
-def set_mic_mute(mute=False):
-    run_cmd(f"amixer set Capture {'mute' if mute else 'unmute'}")
-
-def set_aux_services(enable=True):
-    services = ["cups", "cups-browsed", "ModemManager"]
-    action = "start" if enable else "stop"
-    for s in services:
-        manage_service(s, action)
-
-def start_dev_stack():
-    for s in ["mongod", "mongodb", "ollama"]:
-        manage_service(s, "start")
-
-def get_prime_tiers():
-    total_hw = get_total_cores()
-    all_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71]
-    primes = [p for p in all_primes if p <= total_hw]
-    if total_hw not in primes and total_hw > 1:
-        primes.append(total_hw)
-    return sorted(list(set(primes)))
-
 def apply_prime(prime_count):
-    total_threads = get_total_cores()
-    prime_count = min(max(prime_count, 1), total_threads)
-    pct = round((prime_count / total_threads) * 100)
+    """
+    Apply pure percentage-based hardware governor:
+      - Uses UNIVERSAL_PRIME_PCT map (e.g. P:23 is always 75% for everyone)
+      - Scales active cores: round((pct / 100) * total_cores)
+      - Scales CPU clock ceiling: min_freq + ratio * (0.80 * max_freq - min_freq)
+      - Scales GPU clock ceiling: min_gpu + ratio * (0.80 * max_gpu - min_gpu)
+      - Disables all auto/turbo boost features across CPU & GPU
+      - Preserves automatic BIOS fan curve for safety
+    """
+    hw = discover_hardware()
+    total_threads = hw["total_cores"]
 
-    print(f"[*] Shifting to Prime P:{prime_count} ({prime_count}/{total_threads} Cores Online / ~{pct}%)")
+    # Match requested prime to universal percentage
+    pct = UNIVERSAL_PRIME_PCT.get(prime_count)
+    if pct is None:
+        # Interpolate closest percentage if an unmapped prime is supplied
+        if prime_count <= 2:
+            pct = 6
+        elif prime_count >= 31:
+            pct = 100
+        else:
+            pct = round((prime_count / 31.0) * 100)
 
-    set_keyboard_backlight_max()
+    ratio = pct / 100.0
+
+    # Dynamically scale active cores for this host's topology
+    active_cores = max(1, min(round(ratio * total_threads), total_threads))
+
+    # 80% Max Safety Ceiling on CPU frequency
+    target_cpu_khz = int(hw["cpu_min_khz"] + ratio * (0.80 * hw["cpu_max_khz"] - hw["cpu_min_khz"]))
+
+    print(f"[*] Shifting to Prime P:{prime_count} (~{pct}% Capacity for this machine)")
+    print(f"[*] Hardware Allocation: {active_cores}/{total_threads} Cores Online, CPU Cap {target_cpu_khz//1000} MHz (80% ceiling)")
+
+    # Common devices
+    write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
-    manage_service("avahi-daemon", "start")
+    run_cmd("sudo systemctl start avahi-daemon")
     set_aux_services(enable=True)
-    set_audio_power_save(enable=(pct < 30))
-    set_pcie_aspm("powersupersave" if pct < 30 else "default")
-    run_cmd("rfkill unblock wifi")
     set_radios(wifi=True, bluetooth=False)
 
-    # Core allocation
-    set_cpu_cores(count=prime_count)
+    # 1. Physical Core Allocation
+    set_cpu_cores(active_cores)
 
-    # Power tuning by percentage capacity
-    if pct <= 25:
-        set_platform_profile("low-power")
+    # 2. Strict Turbo/Boost Disablement
+    set_cpu_boost(False)
+
+    # 3. Frequency Ceiling Clamp
+    set_cpu_freq_cap(target_cpu_khz)
+
+    # 4. CPU Governor / Energy Profile
+    if ratio <= 0.25:
+        write_sysfs("/sys/firmware/acpi/platform_profile", "low-power")
         set_cpu_governor("powersave", epp="power")
-        set_cpu_boost(False)
-        set_cpu_freq_cap(1600000 if pct <= 15 else 2200000)
-        set_gpu_power_level("lowlow", pct=pct)
-    elif pct <= 60:
-        set_platform_profile("balanced")
+        write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", 1)
+        write_sysfs("/sys/module/pcie_aspm/parameters/policy", "powersupersave")
+    elif ratio <= 0.65:
+        write_sysfs("/sys/firmware/acpi/platform_profile", "balanced")
         set_cpu_governor("powersave", epp="balance_power")
-        set_cpu_boost(False)
-        set_cpu_freq_cap(None)
-        set_gpu_power_level("mid", pct=pct)
-    elif pct <= 85:
-        set_platform_profile("balanced")
-        set_cpu_governor("powersave", epp="balance_performance")
-        set_cpu_boost(True)
-        set_cpu_freq_cap(None)
-        set_gpu_power_level("four", pct=pct)
+        write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", 0)
+        write_sysfs("/sys/module/pcie_aspm/parameters/policy", "default")
     else:
-        set_platform_profile("performance")
-        set_cpu_governor("performance", epp="performance")
-        set_cpu_boost(True)
-        set_cpu_freq_cap(None)
-        set_gpu_power_level("auto", pct=pct)
+        write_sysfs("/sys/firmware/acpi/platform_profile", "balanced")
+        set_cpu_governor("powersave", epp="balance_performance")
+        write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", 0)
+        write_sysfs("/sys/module/pcie_aspm/parameters/policy", "default")
 
-    # Cap fan curve / acoustics proportionally to prime percentage
-    set_fan_speed_cap(pct)
+    # 5. GPU Proportional Clamp (with 80% ceiling & no auto-boost)
+    set_gpu_clamp(ratio, hw)
 
+    # 6. Memory & Swappiness Optimization
+    set_memory_swappiness(ratio)
+
+    # 7. Keep LLM & Server stacks protected
     start_dev_stack()
-    print(f"[-] CPU: {prime_count} threads active (~{pct}% system capacity)")
-    print(f"[-] Fans: Capped proportionally to ~{pct}% acoustic/cooling tier")
-    print(f"[✓] Tuned to P:{prime_count} (~{pct}% capacity).")
-    launch_user_terminal(f"P:{prime_count} ({prime_count} Cores / ~{pct}%)")
+
+    print(f"[-] Cores Online : {active_cores} / {total_threads} ({pct}%)")
+    print(f"[-] CPU Ceiling  : {target_cpu_khz//1000} MHz (Capped, Boost OFF)")
+    if hw["gpu"]["vendor"] == "nvidia":
+        g_min = hw["gpu"]["min_clk_mhz"]
+        g_max = hw["gpu"]["max_clk_mhz"]
+        g_target = int(g_min + ratio * (0.80 * g_max - g_min)) if g_max else "N/A"
+        print(f"[-] GPU Ceiling  : {g_target} MHz (Capped, Auto-Boost 0)")
+    print(f"[-] Fans         : Auto-Managed BIOS (Safe acoustics)")
+    print(f"[✓] Tuned to Prime P:{prime_count} (~{pct}% capacity).")
+    launch_user_terminal(f"P:{prime_count} ({active_cores}/{total_threads} Cores / ~{pct}%)")
 
 STATE_FILE = "/var/run/changestate.state"
 TELEMETRY_LOG = "/var/log/changestate_telemetry.jsonl"
@@ -348,79 +459,55 @@ def save_active_state(name):
         pass
     collect_telemetry_snapshot(name)
 
-def get_active_state():
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, "r") as f:
-                return f.read().strip()
-        except Exception:
-            pass
-    return "untracked / manual"
-
 def show_status():
-    print("========================================")
-    print(f" Active Gear     : {get_active_state().upper()}")
-    print("========================================")
+    hw = discover_hardware()
+    print("======================================================")
+    print(" [*] CHANGESTATE HARDWARE STATUS")
+    print("======================================================")
     try:
-        with open("/sys/firmware/acpi/platform_profile", "r") as f:
-            print(f"Platform Profile : {f.read().strip()}")
+        with open(STATE_FILE, "r") as f:
+            state = f.read().strip()
+        print(f"Active Gear      : {state}")
     except Exception:
-        pass
-
-    try:
-        with open("/sys/devices/system/cpu/cpufreq/policy0/scaling_governor", "r") as f:
-            print(f"CPU Governor     : {f.read().strip()}")
-    except Exception:
-        pass
-
-    try:
-        with open("/sys/devices/system/cpu/cpufreq/boost", "r") as f:
-            boost_val = f.read().strip()
-            print(f"CPU Boost        : {'Enabled' if boost_val == '1' else 'Disabled'}")
-    except Exception:
-        pass
+        print("Active Gear      : UNKNOWN")
 
     try:
         with open("/sys/devices/system/cpu/online", "r") as f:
-            online = f.read().strip()
-            total_hw = get_total_cores()
-            print(f"Online Cores     : {online} (out of 0-{total_hw - 1})")
+            print(f"CPU Online Cores : {f.read().strip()} (of {hw['total_cores']} threads)")
     except Exception:
         pass
 
     try:
-        with open("/sys/devices/system/cpu/cpufreq/policy0/energy_performance_preference", "r") as f:
-            print(f"CPU EPP          : {f.read().strip()}")
-    except Exception:
-        pass
-
-    # Fan mode status
-    try:
-        fan_nodes = glob.glob("/sys/devices/pci*/**/VPC2004:00/fan_mode")
-        if fan_nodes:
-            with open(fan_nodes[0], "r") as f:
-                mode_map = {"5": "Silent / Quiet (≤25%)", "0": "Balanced / Cruising (≤75%)", "1": "Full Open Throttle (100%)"}
-                val = f.read().strip()
-                print(f"Fan Mode         : {mode_map.get(val, val)}")
+        with open("/sys/devices/system/cpu/intel_pstate/no_turbo", "r") as f:
+            val = f.read().strip()
+            print(f"Turbo/Boost      : {'DISABLED (Enforced)' if val == '1' else 'ENABLED'}")
     except Exception:
         pass
 
     try:
-        gpu_nodes = glob.glob("/sys/class/drm/card*/device/power_dpm_force_performance_level")
-        if gpu_nodes:
-            with open(gpu_nodes[0], "r") as f:
-                print(f"GPU Power Level  : {f.read().strip()}")
-        elif has_nvidia_gpu():
+        with open("/sys/devices/system/cpu/cpufreq/policy0/scaling_max_freq", "r") as f:
+            khz = int(f.read().strip())
+            print(f"CPU Clock Ceiling: {khz // 1000} MHz (Hardware max: {hw['cpu_max_khz'] // 1000} MHz)")
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/sys/vm/swappiness", "r") as f:
+            print(f"VM Swappiness    : {f.read().strip()}")
+    except Exception:
+        pass
+
+    if hw["gpu"]["vendor"] == "nvidia":
+        try:
             res = subprocess.run(
                 "nvidia-smi --query-gpu=power.draw,power.limit,clocks.gr --format=csv,noheader",
                 shell=True, capture_output=True, text=True
             )
             if res.returncode == 0 and res.stdout.strip():
                 parts = [p.strip() for p in res.stdout.strip().split(",")]
-                draw, limit, clock = parts[0], parts[1], parts[2]
-                print(f"GPU Status       : {draw} (Limit: {limit}, Clock: {clock})")
-    except Exception:
-        pass
+                print(f"GPU Draw / Clock : {parts[0]} / {parts[2]} (Limit: {parts[1]})")
+        except Exception:
+            pass
 
     try:
         with open("/sys/class/power_supply/BAT0/capacity", "r") as f:
@@ -432,22 +519,33 @@ def show_status():
         pass
 
 def main():
-    total_hw = get_total_cores()
-    primes = get_prime_tiers()
+    hw = discover_hardware()
+    total_hw = hw["total_cores"]
 
     if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
         print("Usage: changestate <prime_gear>")
-        print("\nAvailable gears:")
-        for p in primes:
-            pct = round((p / total_hw) * 100)
-            print(f"  p{p:<3} - P:{p} ({p}/{total_hw} cores / ~{pct}% / fan cap ~{pct}%)")
-        print("  status - Show current active gear & hardware state")
+        print("\nDiscovered Machine Hardware:")
+        print(f"  CPU Threads : {total_hw}")
+        print(f"  CPU Range   : {hw['cpu_min_khz']//1000} MHz - {hw['cpu_max_khz']//1000} MHz")
+        print(f"  Total RAM   : {hw['mem_total_mb']} MB (Swap: {hw['swap_total_mb']} MB)")
+        print(f"  GPU Vendor  : {hw['gpu']['vendor']} (Max Clock: {hw['gpu']['max_clk_mhz']} MHz)")
+        print("\nUniversal Prime Gears (Scales across ANY host, 80% Max Cap):")
+        for p, pct in UNIVERSAL_PRIME_PCT.items():
+            cores = max(1, round((pct / 100.0) * total_hw))
+            sweet = " (75% Sweet Spot)" if p == 23 else ""
+            print(f"  p{p:<3} - P:{p:<2} (~{pct:>3}% Capacity -> {cores}/{total_hw} cores online{sweet})")
+        print("  status     - Show current active gear & hardware status")
+        print("  gears-json - Machine-tailored JSON metadata for Cinnamon applet")
         sys.exit(0)
 
     target = sys.argv[1].lower()
 
     if target == "status":
         show_status()
+        return
+
+    if target in ("gears-json", "gears"):
+        print(json.dumps(get_gears_metadata()))
         return
 
     prime_val = None
@@ -458,14 +556,15 @@ def main():
 
     if prime_val is not None:
         apply_prime(prime_val)
-        total_threads = get_total_cores()
-        pct = round((min(prime_val, total_threads) / total_threads) * 100)
+        pct = UNIVERSAL_PRIME_PCT.get(prime_val, round((prime_val / 31.0) * 100))
+        cores = max(1, round((pct / 100.0) * total_hw))
         save_active_state(f"P:{prime_val}")
-        run_cmd(f'notify-send "Gear Shifted" "P:{prime_val} (~{pct}% Capacity & Fan Cap)" -i preferences-system-power')
+        run_cmd(f'notify-send "Gear Shifted" "P:{prime_val} (~{pct}% Capacity / {cores} Cores / 80% Cap / Auto Fans)" -i preferences-system-power')
         return
 
     print(f"Error: Unknown gear '{target}'")
-    print(f"Choices: {', '.join([f'p{p}' for p in primes])}, status")
+    valid_gears = [f"p{p}" for p in UNIVERSAL_PRIME_PCT.keys()]
+    print(f"Choices: {', '.join(valid_gears)}, status, gears-json")
     sys.exit(1)
 
 if __name__ == "__main__":
