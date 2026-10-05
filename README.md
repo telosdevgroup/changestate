@@ -6,6 +6,71 @@
 
 ---
 
+## Visual Interface & Terminal Status
+
+### Native Cinnamon Panel Applet
+Continuous capacity slider, real-time tier badge, and hardware diagnostic readout:
+
+![ChangeState Cinnamon Panel Applet](assets/cinnamon-applet-panel.png)
+
+### ASCII Terminal Status Readout
+Instant hardware telemetry and capacity state inspected via `changestate status`:
+
+```text
+================================================================
+  CHANGESTATE  •  Active Level: P:13 (~42% Capacity)
+  [██████████░░░░░░░░░░░░░░] ~42%
+================================================================
+CPU (Processor):
+  • Active Cores   : 13 of 32 cores running (19 powered down asleep)
+  • Speed Ceiling  : 1203 MHz (Clamped from factory 2200 MHz to stop heat)
+  • Turbo Boost    : Off (Enforced - stops sudden fan spikes)
+
+GPU (Graphics):
+  • Real-Time Draw : 20.72 W (Running at 270 MHz)
+  • Power Ceiling  : Factory 115W base, dynamic boost spikes clamped
+
+Memory & Cooling:
+  • Swappiness     : 6 (Keeps active data in RAM, avoids disk thrash)
+  • Cooling Fans   : BIOS Automatic (Quiet baseline, safe thermal curve)
+  • Battery        : 97% (Not charging)
+================================================================
+```
+
+---
+
+## Quick One-Liner Installation
+
+Install the ChangeState CLI to `/usr/local/bin/changestate` and register the Cinnamon desktop applet with a single command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/telosdevgroup/changestate/main/install.sh | bash
+```
+
+*(The script symlinks/copies the applet to `~/.local/share/cinnamon/applets/changestate@avathings.com` and installs the CLI to `/usr/local/bin/changestate`.)*
+
+---
+
+## Universal Prime Capacity Reference Table ($P:2 \dots P:31$)
+
+Every prime gear corresponds to a calibrated universal capacity ratio that dynamically dictates active cores, clock limits, and power targets:
+
+| Prime Tier | Universal % | Active Cores (8-Thread Rig) | Active Cores (16-Thread Laptop) | Active Cores (32-Thread Workstation) | Subsystem Profile & Behavior |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **`P:2`** | **6%** | 1 core | 1 core | 2 cores | Minimum floor capacity, extreme battery sipping. Codec power save, low-power ACPI profile. |
+| **`P:3`** | **10%** | 1 core | 2 cores | 3 cores | Ultra-light background terminal, sensor monitoring, minimal background thermal footprint. |
+| **`P:5`** | **16%** | 1 core | 3 cores | 5 cores | Quiet browsing and light documentation reading without cooling fan spinup. |
+| **`P:7`** | **23%** | 2 cores | 4 cores | 7 cores | Smooth typing, background audio playback, completely cool thermals. |
+| **`P:11`** | **35%** | 3 cores | 6 cores | 11 cores | Whispering cool server operation & steady background local LLM inferencing. |
+| **`P:13`** | **42%** | 3 cores | 7 cores | 13 cores | Steady development workflow, clean responsive editor, balanced battery drain. |
+| **`P:17`** | **55%** | 4 cores | 9 cores | 18 cores | Multi-service containers, active compiling, fluid desktop responsiveness. |
+| **`P:19`** | **61%** | 5 cores | 10 cores | 20 cores | Heavy local developer builds with concurrent IDE and browser multitasking. |
+| **`P:23`** | **75%** | 6 cores | 12 cores | 24 cores | **The Balanced Sweet Spot** — Full gaming & heavy development with zero fan panic loops. |
+| **`P:29`** | **93%** | 7 cores | 15 cores | 30 cores | High-throughput data ingestion, fast local compilation, and heavy batch runs. |
+| **`P:31`** | **100%** | 8 cores | 16 cores | 32 cores | **Full Throttle** — All clamps released, uncapped factory turbo boost, and maximum GPU TGP. |
+
+---
+
 ## The Philosophy: Elastic Scaling without Auto-Boost Chaos
 
 Modern laptop processors and GPUs are tuned aggressively out of the box—frequently triggering 5.5 GHz micro-bursts for trivial background tasks, drawing triple their baseline wattage, and sending cooling fans into audible panic loops.
@@ -19,63 +84,19 @@ Modern laptop processors and GPUs are tuned aggressively out of the box—freque
      - Total RAM and Swap capacity (`/proc/meminfo`)
      - GPU hardware clocks and power bounds via driver sysfs / `nvidia-smi`
    - Dynamically scales active online cores to host topology:
-     $$\text{Active Cores} = \text{round}\left(\frac{\text{Capacity \%}}{100} \times \text{Total Threads}\right)$$
+     $$\text{Active Cores} = \max\left(1, \min\left(\text{round}\left(\frac{\text{Capacity \%}}{100} \times \text{Total Threads}\right), \text{Total Threads}\right)\right)$$
 
-2. **The 80% Silicon Safety Ceiling**:
-   - Clocks scale smoothly across the range:
+2. **The 80% Silicon Safety Ceiling & Turbo Clamp**:
+   - On sub-100% tiers (`P:2` through `P:29`), clocks scale smoothly across the range:
      $$\text{Target Clock} = \text{Min} + \left(\frac{\text{Capacity \%}}{100}\right) \times \left(0.80 \times \text{Max} - \text{Min}\right)$$
-   - Even at 100% capacity (`P:31`), frequencies stop cleanly at 80% of silicon max. The system never redlines.
+   - Turbo Boost and dynamic GPU boosts are strictly disabled across intermediate tiers to eliminate sudden thermal spikes.
+   - At `P:31` (100%), all clamps are released: full turbo boost enabled, uncapped clock limits, and factory GPU TGP.
 
-3. **No Auto-Boost Spikes**:
-   - Intel `no_turbo = 1` and NVIDIA `--auto-boost-permission=0` are strictly enforced. Clocks remain steady under load without sudden thermal spikes.
+3. **BIOS Thermal Safety Preserved**:
+   - Cooling fans remain governed by hardware automatic ACPI curves. Because clock and voltage spikes are eliminated on intermediate tiers, the system purrs quietly without any risk of stalling fans or overheating.
 
-4. **BIOS Thermal Safety Preserved**:
-   - Cooling fans remain governed by the hardware's automatic ACPI curves. Because clock and voltage spikes are impossible, the system naturally purrs quietly without any risk of board overheating.
-
-5. **Session & Process Protection**:
-   - Local LLM inferencing (`ollama`) and local databases (`mongod`, `mongodb`) are kept alive across every capacity transition.
-
----
-
-## Universal Capacity Tiers
-
-Every prime notch represents an identical, universal capacity percentage for any machine:
-
-| Tier | Universal % | Active Cores (8-Core Laptop) | Active Cores (16-Core Laptop) | Active Cores (32-Thread Workstation) | Behavior |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **`P:2`** | **6%** | 1 core | 1 core | 2 cores | Minimum floor capacity, extreme battery sipping. |
-| **`P:3`** | **10%** | 1 core | 2 cores | 3 cores | Ultra-light background terminal / sensor monitoring. |
-| **`P:5`** | **16%** | 1 core | 3 cores | 5 cores | Quiet browsing and light documentation. |
-| **`P:7`** | **23%** | 2 cores | 4 cores | 7 cores | Smooth typing, background music, cool thermals. |
-| **`P:11`** | **35%** | 3 cores | 6 cores | 11 cores | Whispering cool server & background LLM inferencing. |
-| **`P:13`** | **42%** | 3 cores | 7 cores | 13 cores | Steady development, clean responsive editor. |
-| **`P:17`** | **55%** | 4 cores | 9 cores | 18 cores | Multi-service containers, active compiling. |
-| **`P:19`** | **61%** | 5 cores | 10 cores | 20 cores | Heavy local dev with fluid multitasking. |
-| **`P:23`** | **75%** | 6 cores | 12 cores | 24 cores | **The Balanced Sweet Spot** — Full gaming & dev with zero fan panic. |
-| **`P:29`** | **93%** | 7 cores | 15 cores | 30 cores | High-throughput data builds and heavy batch runs. |
-| **`P:31`** | **100%** | 8 cores | 16 cores | 32 cores | Full capacity stride (locked cleanly under 80% silicon max). |
-
----
-
-## Cinnamon Panel Applet
-
-`changestate` includes a native Linux Mint / Cinnamon panel applet (`cinnamon-applet/changestate@telosdevgroup`):
-
-- **Real-Time Badge**: Displays current capacity on your taskbar (e.g. `P:11`, `P:23`).
-- **Elastic Capacity Slider**: Click the applet to smoothly dial between `P:2` and `P:31`.
-- **Current Hardware State**: Click to inspect active cores, exact clock ceilings, real-time GPU draw, and swappiness in a clean human-readable readout.
-- **Dynamic Host Query**: Automatically invokes `changestate tiers-json` on startup to adapt slider notches and core counts to whatever machine it is running on.
-
-### Quick Symlink Setup:
-```bash
-# 1. Symlink CLI to PATH
-sudo ln -sf /path/to/changestate /usr/local/bin/changestate
-
-# 2. Symlink Applet to Cinnamon
-ln -sf /path/to/cinnamon-applet/changestate@telosdevgroup ~/.local/share/cinnamon/applets/changestate@telosdevgroup
-
-# 3. Reload Cinnamon (Alt+F2 -> r -> Enter)
-```
+4. **Session & Process Protection**:
+   - Core 0 is permanently pinned online to guarantee kernel timer stability. Background services (such as local LLM inference engines and databases) remain fully intact across capacity transitions.
 
 ---
 

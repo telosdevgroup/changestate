@@ -1,0 +1,41 @@
+{
+  "general-section": {
+    "type": "section",
+    "description": "General Preferences"
+  },
+  "always-spawn-terminal": {
+    "type": "switch",
+    "default": false,
+    "description": "Always start a terminal window on gear change",
+    "tooltip": "When enabled, automatically launches a new terminal showing the active gear banner and prompt."
+  },
+  "security-section": {
+    "type": "section",
+    "description": "Privilege & Security"
+  },
+  "always-require-password": {
+    "type": "switch",
+    "default": false,
+    "description": "Always require sudo password on gear change",
+    "tooltip": "When enabled, forces a fresh authentication prompt on every gear adjustment instead of caching."
+  },
+  "about-section": {
+    "type": "section",
+    "description": "About & Support"
+  },
+  "open-project-page": {
+    "type": "button",
+    "description": "Open ChangeState Website / Docs (GitHub)",
+    "callback": "_openProjectPage"
+  },
+  "open-github-sponsors": {
+    "type": "button",
+    "description": "Sponsor on GitHub",
+    "callback": "_openGithubSponsors"
+  },
+  "open-support-tip": {
+    "type": "button",
+    "description": "Tip / Support via Lemon Squeezy",
+    "callback": "_openSupportTip"
+  }
+}
