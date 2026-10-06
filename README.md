@@ -1,33 +1,65 @@
-# ChangeState
+# 🎚️ ChangeState
 
+**A volume knob for your Linux machine.**
 
-> **Support Development:** [Sponsor on GitHub](https://github.com/sponsors/telosdevgroup) · [Tip / Support via Lemon Squeezy](https://avathings.com/changestate#tip)
+Turn it down and your computer runs cooler, quieter, and sips power 🔋. Turn it up and it stretches its legs 🚀. ChangeState does this by steering your CPU, GPU, and memory settings to match the level you pick.
+
+Works with AMD and Intel processors, and with AMD and NVIDIA graphics.
 
 ---
 
-## Quick One-Liner Installation
-
-Install ChangeState and configure the autonomous daemon:
+## ⚡ Quick start
 
 ```bash
+# install
 curl -sSL https://raw.githubusercontent.com/telosdevgroup/changestate/main/install.sh | bash
+
+# see how your machine is doing
+changestate status
+
+# pick a level
+sudo changestate p23     # a good everyday balance
+sudo changestate p31     # everything wide open
+```
+
+Want it to adjust itself while you work? Turn on automatic mode:
+
+```bash
 sudo systemctl enable --now changestate-auto
 ```
 
-*(Installs the CLI to `/usr/local/bin/changestate` and enables the autonomous prime-stepping daemon.)*
+---
+
+## 📦 Install
+
+**The easy way:**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/telosdevgroup/changestate/main/install.sh | bash
+```
+
+**Or from a clone:**
+
+```bash
+git clone https://github.com/telosdevgroup/changestate.git
+cd changestate
+./install.sh
+```
+
+You need Linux, Python 3, and `sudo` to change levels. Looking at status doesn't need it.
 
 ---
 
-## What It Is
+## 🕹️ Using it
 
-`changestate` is an unbloated, proportional hardware governor and autonomous scaling daemon for Linux. It auto-discovers your machine's hardware capabilities and maps overall system throughput to standardized prime capacity tiers (`P:2` through `P:31`), coordinating active CPU cores, clock ceilings, GPU frequencies, and memory caches.
+```bash
+changestate                # what hardware you have and what levels exist
+changestate status         # where things stand right now
+sudo changestate p11       # move to a level
+sudo changestate p31       # back to full power, always works
+```
 
----
-
-## Terminal Status & Hardware Inspection
-
-### ASCII Terminal Status Readout
-Instant hardware telemetry and capacity state inspected via `changestate status`:
+`status` gives you a readable snapshot:
 
 ```text
 ================================================================
@@ -52,130 +84,106 @@ Memory & Cooling:
 
 ---
 
-## Universal Prime Capacity Reference Table ($P:2 \dots P:31$)
+## 🔢 The levels
 
-Every prime gear corresponds to a calibrated universal capacity ratio that dynamically dictates active cores, clock limits, and power targets:
+The levels are named after prime numbers: **2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31**.
 
-| Prime Tier | Universal % | Active Cores (8-Thread Rig) | Active Cores (16-Thread Laptop) | Active Cores (32-Thread Workstation) | Subsystem Profile & Behavior |
-| :--- | :---: | :---: | :---: | :---: | :--- |
-| **`P:2`** | **6%** | 1 core | 1 core | 2 cores | Minimum floor capacity, extreme battery sipping. Codec power save, low-power ACPI profile. |
-| **`P:3`** | **10%** | 1 core | 2 cores | 3 cores | Ultra-light background terminal, sensor monitoring, minimal background thermal footprint. |
-| **`P:5`** | **16%** | 1 core | 3 cores | 5 cores | Quiet browsing and light documentation reading without cooling fan spinup. |
-| **`P:7`** | **23%** | 2 cores | 4 cores | 7 cores | Smooth typing, background audio playback, completely cool thermals. |
-| **`P:11`** | **35%** | 3 cores | 6 cores | 11 cores | Whispering cool server operation & steady background local LLM inferencing. |
-| **`P:13`** | **42%** | 3 cores | 7 cores | 13 cores | Steady development workflow, clean responsive editor, balanced battery drain. |
-| **`P:17`** | **55%** | 4 cores | 9 cores | 18 cores | Multi-service containers, active compiling, fluid desktop responsiveness. |
-| **`P:19`** | **61%** | 5 cores | 10 cores | 20 cores | Heavy local developer builds with concurrent IDE and browser multitasking. |
-| **`P:23`** | **75%** | 6 cores | 12 cores | 24 cores | **The Balanced Sweet Spot** — Full gaming & heavy development with zero fan panic loops. |
-| **`P:29`** | **93%** | 7 cores | 15 cores | 30 cores | High-throughput data ingestion, fast local compilation, and heavy batch runs. |
-| **`P:31`** | **100%** | 8 cores | 16 cores | 32 cores | **Full Throttle** — All clamps released, uncapped factory turbo boost, and maximum GPU TGP. |
+Why primes? Because it's cool, and because they give the numbers a spine. They're odd, a little irregular, and they don't line up with anything else. A level like `P:13` has its own personality. It isn't just "about half".
+
+Low numbers are quiet and cool 🧊. High numbers are fast and loud 🔥. Here's how they feel:
+
+| Level | Feels like |
+| :--- | :--- |
+| 😴 `P:2` | Asleep. Maximum battery, almost no heat. |
+| 🌙 `P:3` | Barely awake. A terminal and a few monitors. |
+| 📖 `P:5` | Reading and light browsing, fans stay off. |
+| 🎧 `P:7` | Typing and music, cool to the touch. |
+| 🤖 `P:11` | Quiet background work, even a local AI model ticking along. |
+| ⌨️ `P:13` | A normal day of coding. |
+| 🐳 `P:17` | Containers and compiling. |
+| 🧱 `P:19` | Builds, editor and a pile of browser tabs. |
+| 🎯 **`P:23`** | **The sweet spot. Games and heavy work without the fans freaking out.** |
+| 🏎️ `P:29` | Big jobs, fast. |
+| 🚀 **`P:31`** | **Wide open. No limits, full turbo, full GPU power.** |
+
+Your machine decides what each level means in practice. On a 32-thread desktop, `P:23` keeps 24 threads running. On a laptop with fewer, it keeps proportionally fewer.
+
+There's also 🔒 **`P:0`**, a lockdown mode (`changestate mom`). It turns off wireless, blocks incoming connections, and runs on two cores. You have to ask for it.
 
 ---
 
-## Autonomous Scaling Daemon (`changestate-auto`)
+## 🤖 Automatic mode
 
-In addition to manual CLI and applet control, ChangeState includes an autonomous background timing daemon (`changestate-auto.service`) that adaptively scales your system capacity without manual intervention or intrusive telemetry.
+If you'd rather not think about it, `changestate-auto` runs in the background and moves the level for you.
 
-### The Inverted Harmonic Cadence
-Traditional auto-scalers measure CPU load percentages, which spike chaotically during brief tasks. ChangeState monitors **user input activity** (keyboard, mouse, trackpad via X11 XScreenSaver) across **discrete prime time windows**.
+It pays attention to one thing: **are you there?** 👀 It checks for keyboard, mouse, and trackpad activity. It ignores CPU load, so a brief spike doesn't make it jump around.
 
-Under our **Inverted Harmonic Cadence**, high-power tiers operate on short leashes, while low-power tiers hold patiently before stepping down:
+- 🚶 **Walk away** and it slowly steps down. Busy levels give up fast, and sleepy levels are patient.
+- 👋 **Come back** and it jumps straight up to `P:11`, so the machine is never sluggish when you return.
+- 💪 **Keep working** and it climbs one level at a time, as high as `P:29`.
+- 🛑 It never goes to `P:0` or `P:31` on its own. Those are yours to choose.
 
-| Capacity Tier | Evaluation Window | Decay Behavior |
-| :--- | :---: | :--- |
-| **`P:29`** (~93%) | **2 min** | Extremely short leash. Steps down rapidly if user load ceases. |
-| **`P:23`** (~75%) | **3 min** | Balanced peak window. Steps down to P:19 after 3m of inactivity. |
-| **`P:19`** (~61%) | **5 min** | Work session cooldown. |
-| **`P:17`** (~55%) | **7 min** | Medium active window. |
-| **`P:13`** (~42%) | **11 min** | Steady state holding pattern. |
-| **`P:11`** (~35%) | **13 min** | **The Wake Baseline** — Default landing tier on user return. |
-| **`P:7`** (~23%) | **17 min** | Deep idle buffer. |
-| **`P:5`** (~16%) | **19 min** | Quiet idle buffer. |
-| **`P:3`** (~10%) | **23 min** | Near-floor background hold. |
-| **`P:2`** (~6%) | **29 min** | Minimum capacity floor. Patiently holds for nearly half an hour. |
+How long it waits before stepping down:
 
-### Core Autonomous Behaviors:
-1. **Autonomous Envelope (`[P:2 — P:29]`)**: The daemon strictly operates between `P:2` (floor) and `P:29` (ceiling). Extreme edge states—`P:0` (MOM Airgap) and `P:31` (Uncapped Turbo Boost)—are **strictly manual opt-in** and are never entered autonomously.
-2. **Wakeup Snap**: When idling below the baseline ($P < \text{P:11}$), any user input immediately breaks the idle window and **snaps straight to P:11**, restoring instant desktop responsiveness without sluggish stepping.
-3. **Sustained Activity Climb**: If user activity continues uninterrupted through an active evaluation window, the daemon steps up to the next prime tier ($P_{i+1}$) until reaching the ceiling at `P:29`.
-4. **Decay Gravity**: When you step away from the machine, upper tiers step down within 2–5 minutes. After extended inactivity, the machine settles into silent low-power tiers.
+| Level | Waits |
+| :--- | :---: |
+| `P:29` | 2 min |
+| `P:23` | 3 min |
+| `P:19` | 5 min |
+| `P:17` | 7 min |
+| `P:13` | 11 min |
+| `P:11` | 13 min |
+| `P:7` | 17 min |
+| `P:5` | 19 min |
+| `P:3` | 23 min |
+| `P:2` | 29 min |
+
+The waits get shorter as you go up because high power is expensive to leave running. The low levels are cheap, so they can wait.
 
 ```bash
-# Enable the background daemon
-sudo systemctl enable --now changestate-auto
-
-# Inspect live daemon decisions & remaining window countdown
-journalctl -u changestate-auto -f
-
-# Run simulation / dry run in fast-forward mode (1 prime minute = 1 second)
-./changestate-auto --dry-run --fast 1.0
+journalctl -u changestate-auto -f          # watch it make decisions
+./changestate-auto --dry-run --fast 1.0    # try it without touching anything
+sudo systemctl stop changestate-auto       # turn it off
 ```
 
 ---
 
-## The Philosophy: Elastic Scaling without Auto-Boost Chaos
+## ✨ What it does for you
 
-Modern laptop processors and GPUs are tuned aggressively out of the box—frequently triggering 5.5 GHz micro-bursts for trivial background tasks, drawing triple their baseline wattage, and sending cooling fans into audible panic loops.
+Modern chips burst to top speed for trivial tasks, pull a lot of power, and send the fans into a panic. ChangeState calms that down:
 
-`changestate` eliminates this behavior with clear, deterministic principles:
-
-1. **Pure Dynamic Auto-Discovery (Zero Hardcoded Topology)**:
-   - Probes the host system dynamically on launch:
-     - CPU logical thread topology (`/sys/devices/system/cpu/cpu[0-9]*`)
-     - Physical CPU frequency ranges (`cpuinfo_min_freq` to `cpuinfo_max_freq`)
-     - Total RAM and Swap capacity (`/proc/meminfo`)
-     - GPU hardware clocks and power bounds via driver sysfs / `nvidia-smi`
-   - Dynamically scales active online cores to host topology:
-     $$\text{Active Cores} = \max\left(1, \min\left(\text{round}\left(\frac{\text{Capacity \%}}{100} \times \text{Total Threads}\right), \text{Total Threads}\right)\right)$$
-
-2. **The 80% Silicon Safety Ceiling & Turbo Clamp**:
-   - On sub-100% tiers (`P:2` through `P:29`), clocks scale smoothly across the range:
-     $$\text{Target Clock} = \text{Min} + \left(\frac{\text{Capacity \%}}{100}\right) \times \left(0.80 \times \text{Max} - \text{Min}\right)$$
-   - Turbo Boost and dynamic GPU boosts are strictly disabled across intermediate tiers to eliminate sudden thermal spikes.
-   - At `P:31` (100%), all clamps are released: full turbo boost enabled, uncapped clock limits, and factory GPU TGP.
-
-3. **BIOS Thermal Safety Preserved**:
-   - Cooling fans remain governed by hardware automatic ACPI curves. Because clock and voltage spikes are eliminated on intermediate tiers, the system purrs quietly without any risk of stalling fans or overheating.
-
-4. **Session & Process Protection**:
-   - Core 0 is permanently pinned online to guarantee kernel timer stability. Background services (such as local LLM inference engines and databases) remain fully intact across capacity transitions.
+- 🧮 **Fewer cores and a lower speed limit** as you move down the levels.
+- 🚫 **No turbo** on any level below `P:31`, so there are no sudden spikes.
+- 🎮 **GPU boost off** below `P:31`, with full power restored at `P:31`.
+- 🧠 **Memory settings** tuned for each level.
+- 🔍 **It finds your hardware itself.** Nothing is hardcoded for your machine.
 
 ---
 
-## Command Line Usage
+## 🛡️ What it won't do
 
-Inspect hardware specs, discovered tiers, or current active levels:
-```bash
-# View discovered specs and available capacity tiers
-changestate
-
-# Check current active hardware state
-changestate status
-
-# Scale to a capacity tier (requires sudo/pkexec)
-sudo changestate p11
-sudo changestate p23
-sudo changestate p31
-```
+- 🌀 **It never touches your fans.** Your BIOS keeps control of them.
+- 🧷 **It never turns off your first CPU core.**
+- 📶 **It never cuts your Wi-Fi or kills your desktop** (outside the opt-in `P:0` lockdown).
+- 🤐 **It skips anything your machine doesn't have,** without complaining.
+- 🆘 **`sudo changestate p31` always puts everything back.**
 
 ---
 
-## Remote Fleet, Lab & Headless Operations
+## 🖥️ Servers, labs, and fleets
 
-`changestate` is designed from the ground up to orchestrate bare-metal infrastructure, compute labs, and remote headless servers without any desktop or GUI requirement.
+It works fine without a desktop too:
 
-- 🚀 **[Ansible Fleet Orchestration Guide](docs/ansible-fleet-orchestration.md)** — Deploy across dozens of Linux nodes and coordinate capacity with ready-to-run Ansible playbooks:
-  - Playbook: [Deploy & Baseline Capacity](docs/recipes/ansible/changestate-deploy.yml)
-  - Playbook: [On-Demand Fleet Capacity Shifter](docs/recipes/ansible/changestate-tier-switch.yml)
-- ⏱️ **[Scheduled Capacity with Cron & Systemd](docs/cron-and-scheduled-capacity.md)** — Automate day/night compute shifts, power-rate savings, and scheduled cooldown cycles:
-  - Crontab recipe: [/etc/cron.d/changestate-schedule](docs/recipes/cron/changestate-schedule.cron)
-  - Systemd units: [changestate@.service](docs/recipes/systemd/changestate@.service), [Day Timer](docs/recipes/systemd/changestate-day.timer), [Night Timer](docs/recipes/systemd/changestate-night.timer)
-- 🖥️ **[Headless Server & Lab Deployment](docs/headless-server-deployment.md)** — Zero desktop dependencies, remote SSH telemetry, and non-interactive sudoers rules:
-  - Security recipe: [Passwordless /etc/sudoers.d snippet](docs/recipes/sudoers/changestate.sudoers)
-  - CI/CD recipe: [GitLab CI Runner Capacity Stepper](docs/recipes/ci-cd/gitlab-ci-changestate.yml)
+- 🧰 [Ansible fleet guide](docs/ansible-fleet-orchestration.md): [deploy playbook](docs/recipes/ansible/changestate-deploy.yml), [tier switcher](docs/recipes/ansible/changestate-tier-switch.yml)
+- ⏰ [Cron and systemd schedules](docs/cron-and-scheduled-capacity.md): quieter at night, faster by day
+- 🗄️ [Headless server setup](docs/headless-server-deployment.md): [sudoers snippet](docs/recipes/sudoers/changestate.sudoers), [GitLab CI recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml)
 
 ---
 
-## License
+## 💛 Support
 
-Free and open source under the MIT License. See [LICENSE](LICENSE) for details.
+If it's useful to you, you can [sponsor on GitHub](https://github.com/sponsors/telosdevgroup) or [leave a tip](https://avathings.com/changestate#tip).
+
+## 📜 License
+
+MIT. See [LICENSE](LICENSE).
