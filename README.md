@@ -1,8 +1,8 @@
 # 🎚️ ChangeState
 
-**A volume knob for your Linux machines.**
+**An automatic, prime-based resource manager for Linux computers.**
 
-Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically less electricity without users ever having to think about it. ChangeState does this by coordinating CPU cores, clock caps, boost, GPU draw, and memory caching across standardized prime tiers.
+Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically less electricity without users ever having to think about it. ChangeState does this by coordinating CPU cores, clock caps, boost, GPU draw, and memory behavior across standardized prime tiers.
 
 Works out of the box with AMD and Intel CPUs, and AMD and NVIDIA GPUs. Zero third-party dependencies.
 
