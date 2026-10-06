@@ -67,7 +67,6 @@ Quieter machines and lower power bills across a lab, cluster, or office without 
 | :--- | :--- | :--- |
 | 🧰 **Ansible Playbooks** | Roll ChangeState out to every machine at once, set default ranges, or step whole clusters on demand. | [Group Guide](docs/ansible-small-group-orchestration.md) · [Deploy Playbook](docs/recipes/ansible/changestate-deploy.yml) · [Tier Switcher](docs/recipes/ansible/changestate-tier-switch.yml) |
 | ⏰ **Schedules & Timers** | High capacity during working hours, deep sleep at night. | [Scheduling Guide](docs/cron-and-scheduled-capacity.md) · [Cron](docs/recipes/cron/changestate-schedule.cron) · [Systemd Timers](docs/recipes/systemd/changestate-day.timer) |
-| 🔋 **BatteryGuard** | Standalone kernel-native charge threshold utility. Caps charging at 80% to protect battery lifespan. | [BatteryGuard Utility](extras/battery-guard) |
 | 🗄️ **Headless Servers** | Runs over SSH on Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, and Arch. Zero GUI libraries. | [Headless Guide](docs/headless-server-deployment.md) |
 | 🔐 **Passwordless Sudo** | Clean sudoers snippet so CI runners and automation can step tiers without passwords. | [Sudoers Snippet](docs/recipes/sudoers/changestate.sudoers) |
 | 🚦 **CI/CD Runners** | Step a build runner up to P:31 for a compile job, then step back down after. | [GitLab CI Recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml) |
@@ -99,7 +98,6 @@ Drop an email to **[telosdevgroup@gmail.com](mailto:telosdevgroup@gmail.com?subj
 For the curious and anyone wanting to peek under the hood:
 
 - 📖 **[The Inner Workings: TL;DR](docs/harmonic-cadence.md):** The quick story on how reversing the primes turns your machine into a self-centering rubber band.
-- 🎁 **[Goodies & Extras](docs/goodies.md):** Standalone companion utilities including [BatteryGuard](docs/battery-guard.md).
 - ⚙️ **[Hardware Actuation & Kernel Interfaces](docs/hardware-actuation.md):** Exact details on CPU topology ordering, clock clamping math, ACPI platform profiles, and safe GPU driver handling.
 - 🏗️ **[System Architecture](docs/architecture.md):** The 5 architectural pillars (Core Engine, Timing Daemon, Device Heartbeat, Event Server, Client Surfaces).
 - 🤖 **[LLM Quickstart & Onboarding](docs/llm-quickstart.md):** High-density reference written for LLMs and autonomous dev-ops bots.
