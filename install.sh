@@ -42,6 +42,12 @@ if [ -n "$SCRIPT_DIR" ]; then
         sudo systemctl daemon-reload
         echo "✓ ChangeState Auto service installed to $SERVICE_TARGET"
     fi
+
+    if [ -f "$SCRIPT_DIR/extras/battery-guard" ]; then
+        sudo ln -sf "$SCRIPT_DIR/extras/battery-guard" /usr/local/bin/battery-guard
+        sudo chmod +x /usr/local/bin/battery-guard
+        echo "✓ BatteryGuard utility linked to /usr/local/bin/battery-guard"
+    fi
 else
     echo "• Fetching latest ChangeState from GitHub..."
     TMP_DIR=$(mktemp -d /tmp/changestate-install.XXXXXX)
@@ -68,6 +74,14 @@ else
         sudo cp "$TMP_DIR/changestate/changestate-auto.service" "$SERVICE_TARGET"
         sudo systemctl daemon-reload
         echo "✓ ChangeState Auto service installed to $SERVICE_TARGET"
+    fi
+
+    if [ -f "$TMP_DIR/changestate/extras/battery-guard" ]; then
+        sudo mkdir -p "$INSTALL_DIR/extras"
+        sudo cp "$TMP_DIR/changestate/extras/battery-guard" "$INSTALL_DIR/extras/"
+        sudo chmod +x "$INSTALL_DIR/extras/battery-guard"
+        sudo ln -sf "$INSTALL_DIR/extras/battery-guard" /usr/local/bin/battery-guard
+        echo "✓ BatteryGuard utility installed to /usr/local/bin/battery-guard"
     fi
 fi
 

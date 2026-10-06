@@ -67,6 +67,7 @@ Quieter machines and lower power bills across a lab, cluster, or office without 
 | :--- | :--- | :--- |
 | 🧰 **Ansible Playbooks** | Roll ChangeState out to every machine at once, set default ranges, or step whole clusters on demand. | [Group Guide](docs/ansible-small-group-orchestration.md) · [Deploy Playbook](docs/recipes/ansible/changestate-deploy.yml) · [Tier Switcher](docs/recipes/ansible/changestate-tier-switch.yml) |
 | ⏰ **Schedules & Timers** | High capacity during working hours, deep sleep at night. | [Scheduling Guide](docs/cron-and-scheduled-capacity.md) · [Cron](docs/recipes/cron/changestate-schedule.cron) · [Systemd Timers](docs/recipes/systemd/changestate-day.timer) |
+| 🔋 **BatteryGuard** | Standalone kernel-native charge threshold utility. Caps charging at 80% to protect battery lifespan. | [BatteryGuard Utility](extras/battery-guard) |
 | 🗄️ **Headless Servers** | Runs over SSH on Ubuntu, Debian, RHEL, Rocky, Alma, Fedora, and Arch. Zero GUI libraries. | [Headless Guide](docs/headless-server-deployment.md) |
 | 🔐 **Passwordless Sudo** | Clean sudoers snippet so CI runners and automation can step tiers without passwords. | [Sudoers Snippet](docs/recipes/sudoers/changestate.sudoers) |
 | 🚦 **CI/CD Runners** | Step a build runner up to P:31 for a compile job, then step back down after. | [GitLab CI Recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml) |
