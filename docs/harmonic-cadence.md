@@ -25,10 +25,10 @@ ChangeState uses a simple prime trick: **we reverse the prime numbers for the ti
         Patient Hold (17 to 29 min)
 ```
 
-Think of it like an **elastic rubber band** anchored right in the center:
+Think of it like an **elastic rubber band** anchored in the balanced sweet spot:
 - **Cranked up high?** You’re on a short leash. The moment you pause, it pulls right back down to normal.
 - **Resting low?** The machine sits quietly for 20+ minutes without constantly fidgeting with clocks or fans.
-- **Touch the mouse?** It snaps right back to the center instantly.
+- **Touch the mouse?** It snaps right back to a responsive baseline (**P:11**, ~35%) instantly.
 
 ---
 
