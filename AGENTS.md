@@ -59,10 +59,10 @@
 ## 1. Architectural Invariants
 
 ### 1.1 File Size Limit
-- **Hard limit: 500 physical lines (`wc -l`) per source file**: `.py`, `.js`, `.sh`, and the extensionless `changestate` entrypoint. Markdown, JSON, and `.desktop` files are exempt.
+- **Hard limit: 500 physical lines (`wc -l`) per file**: applies to all source code (`.py`, `.sh`, entrypoints) AND all documentation/guides (`.md`). If a document grows past 400 lines, split it into modular topic guides under `docs/`.
 - **Entrypoint `changestate` target: ≤ 250 lines.** Push logic into `changestate_core/`.
-- At around 400 lines, split the file into single-responsibility modules under `changestate_core/` and re-export them via `__init__.py`.
-- Delete dead code. Don't comment it out and don't keep "legacy" paths.
+- At around 400 lines, split code into single-responsibility modules under `changestate_core/` and re-export them via `__init__.py`.
+- Delete dead code and obsolete docs. Don't hoard legacy text or commented-out code.
 
 ### 1.2 Tier Table (Single Source of Truth)
 - **Canonical source:** `UNIVERSAL_PRIME_PCT` in [`discovery.py`](file:///home/dev/Code/tdg/compstate/changestate_core/discovery.py). The values are hand-picked (roughly `P/31`, rounded). They are **not** computed, and `P:23 = 75` is intentional.
