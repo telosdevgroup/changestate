@@ -2,7 +2,7 @@
 
 **An automatic, prime-based resource manager for Linux computers.**
 
-Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically less electricity without users ever having to think about it. ChangeState does this by coordinating CPU cores, clock caps, boost, GPU draw, and memory behavior across standardized prime tiers—**holding the entire curve under a strict 80% acoustic and thermal ceiling with boost disabled** until you explicitly unlock full power at P:31.
+Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically less electricity without users ever having to think about it. ChangeState does this by downregulating CPU cores, capping clock speeds to a strict 80% ceiling, disabling boost, and tuning memory caches—until you explicitly unlock full 100% clock speed at P:31.
 
 Works out of the box with AMD and Intel CPUs, and AMD and NVIDIA GPUs. Zero third-party dependencies.
 
