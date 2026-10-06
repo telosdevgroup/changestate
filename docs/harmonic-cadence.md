@@ -74,9 +74,9 @@ If the computer was resting down at **P:2, P:3, or P:5** while you were away:
 
 ## 4. The Two Extremes (Manual Only)
 
-The auto daemon strictly roams between **P:2 and P:29**. Two extreme tiers are kept completely out of the auto loop:
+The auto daemon strictly roams between **P:2 and P:29**, where **everything stays under a strict 80% acoustic and thermal ceiling with boost disabled** so your computer never overheats or screams. Two extreme tiers are kept completely out of the auto loop:
 
 - **P:0 (MOM):** Shuts everything down (radio silence, firewall drop, background jobs culled).
-- **P:31 (Max Cap):** Unlocks everything (100% uncapped, turbo boost on, full factory wattage).
+- **P:31 (Max Cap):** Unlocks everything: breaks the 80% ceiling, turns turbo boost on, and restores full factory wattage.
 
 Primes for power, primes in reverse for time. It just balances itself.
