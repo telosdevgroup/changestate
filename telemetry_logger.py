@@ -57,7 +57,7 @@ def get_snapshot():
     now_iso = datetime.now(timezone.utc).isoformat()
 
     # Active persona
-    persona = read_file("/var/run/changestate.state", default="untracked")
+    persona = read_file("/run/changestate.state", default="untracked")
 
     # CPU online cores & frequencies
     online_cores = read_file("/sys/devices/system/cpu/online", default="unknown")
@@ -124,7 +124,7 @@ def main():
     interval = 10.0  # Log every 10 seconds by default
     if len(sys.argv) > 1 and sys.argv[1] == "--once":
         rec = get_snapshot()
-        print(json.dumps(rec, indent=2))
+        print(json.dumps(rec, separators=(",", ":"), allow_nan=False))
         return
 
     # Check if target log directory exists, otherwise fallback to local
@@ -139,7 +139,7 @@ def main():
     try:
         while True:
             rec = get_snapshot()
-            line = json.dumps(rec)
+            line = json.dumps(rec, separators=(",", ":"), allow_nan=False)
             try:
                 with open(target_path, "a") as f:
                     f.write(line + "\n")

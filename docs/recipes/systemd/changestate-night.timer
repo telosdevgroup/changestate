@@ -1,0 +1,13 @@
+[Unit]
+Description=ChangeState Night Shift Capacity (P:7)
+RefuseManualStart=no
+RefuseManualStop=no
+
+[Timer]
+# Fire at 19:00 (7 PM) Monday through Friday
+OnCalendar=Mon..Fri *-*-* 19:00:00
+Persistent=true
+Unit=changestate@p7.service
+
+[Install]
+WantedBy=timers.target

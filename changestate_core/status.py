@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from .hal import run_cmd
 from .discovery import discover_hardware, UNIVERSAL_PRIME_PCT
 
-STATE_FILE = "/var/run/changestate.state"
+STATE_FILE = "/run/changestate.state"
 TELEMETRY_LOG = "/var/log/changestate_telemetry.jsonl"
 
 def collect_telemetry_snapshot(target_tier):
@@ -61,22 +61,22 @@ def collect_telemetry_snapshot(target_tier):
         "battery": battery
     }
 
-    json_line = json.dumps(doc)
+    json_line = json.dumps(doc, separators=(",", ":"), allow_nan=False)
     try:
         with open(TELEMETRY_LOG, "a") as f:
             f.write(json_line + "\n")
-    except PermissionError:
-        subprocess.run(f"echo '{json_line}' | sudo tee -a {TELEMETRY_LOG} > /dev/null", shell=True, check=False)
+    except PermissionError as e:
+        print(f"[!] Warning writing telemetry: {e}")
     except Exception:
         pass
 
 def save_active_state(name):
-    """Save active tier name to /var/run/changestate.state and log telemetry."""
+    """Save active tier name to STATE_FILE and log telemetry."""
     try:
         with open(STATE_FILE, "w") as f:
             f.write(name)
-    except PermissionError:
-        subprocess.run(f"echo {name} | sudo tee {STATE_FILE} > /dev/null", shell=True, check=False)
+    except PermissionError as e:
+        print(f"[!] Warning writing state file: {e}")
     except Exception:
         pass
     collect_telemetry_snapshot(name)
@@ -99,7 +99,7 @@ def show_status():
         except Exception:
             pass
 
-    pct = UNIVERSAL_PRIME_PCT.get(p_num, 75) if p_num else 75
+    pct = UNIVERSAL_PRIME_PCT.get(p_num) if p_num else None
 
     # Core count
     online_count = hw["total_cores"]
@@ -171,13 +171,13 @@ def show_status():
 
     # Capacity bar
     bar_width = 24
-    filled = round((pct / 100) * bar_width)
+    filled = round((pct / 100) * bar_width) if pct is not None else 0
     bar = "█" * filled + "░" * (bar_width - filled)
-    pct_prefix = "~" if pct < 100 else ""
+    pct_txt = "unknown" if pct is None else (f"{pct}%" if pct >= 100 else f"~{pct}%")
 
     print("=" * 64)
-    print(f"  CHANGESTATE  •  Active Level: {state} ({pct_prefix}{pct}% Capacity)")
-    print(f"  [{bar}] {pct_prefix}{pct}%")
+    print(f"  CHANGESTATE  •  Active Level: {state} ({pct_txt} Capacity)")
+    print(f"  [{bar}] {pct_txt}")
     print("=" * 64)
     print("CPU (Processor):")
     print(f"  • Active Cores   : {online_count} of {hw['total_cores']} cores running ({asleep_count} powered down asleep)")
@@ -186,10 +186,14 @@ def show_status():
     print()
     print("GPU (Graphics):")
     print(f"  • Real-Time Draw : {gpu_draw} (Running at {gpu_clk})")
-    if pct >= 100:
-        print("  • Power Ceiling  : Factory Full Uncapped (115W+ TGP, Dynamic Boost enabled)")
+    p_def = hw["gpu"].get("power_default_w")
+    tgp = f"{p_def}W" if p_def else "factory"
+    if pct is None:
+        print("  • Power Ceiling  : unknown (no recorded tier)")
+    elif pct >= 100:
+        print(f"  • Power Ceiling  : Uncapped ({tgp} TGP, Dynamic Boost enabled)")
     else:
-        print("  • Power Ceiling  : Factory 115W base, dynamic boost spikes clamped")
+        print(f"  • Power Ceiling  : {tgp} TGP, dynamic boost spikes clamped")
     print()
     print("Memory & Cooling:")
     print(f"  • Swappiness     : {swappiness} (Keeps active data in RAM, avoids disk thrash)")

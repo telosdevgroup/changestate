@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""
+changestate-auto - Prime-Based Elastic Capacity Scaling Daemon.
+Monitors user activity and steps ChangeState through prime capacity tiers.
+"""
+
+import sys
+import os
+import time
+import argparse
+import ctypes
+import json
+import glob
+from datetime import datetime
+
+# Autonomous Elastic Envelope: P:2 through P:29 (P:0 MOM and P:31 are manual opt-in only)
+AUTO_PRIME_LADDER = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29]
+
+# Inverted Harmonic Cadence: High tiers have short leashes; low tiers hold patiently
+INVERTED_WINDOWS = {
+    p: w for p, w in zip(AUTO_PRIME_LADDER, reversed(AUTO_PRIME_LADDER))
+}
+# P2: 29m, P3: 23m, P5: 19m, P7: 17m, P11: 13m, P13: 11m, P17: 7m, P19: 5m, P23: 3m, P29: 2m
+
+CONFIG_FILE = "/etc/changestate/auto.conf"
+STATE_FILE = "/run/changestate.state"
+AUTO_STATE_FILE = "/run/changestate-auto.json"
+
+# Ctypes binding to X11 XScreenSaver to query user idle milliseconds
+class XScreenSaverInfo(ctypes.Structure):
+    _fields_ = [
+        ('window', ctypes.c_ulong),
+        ('state', ctypes.c_int),
+        ('kind', ctypes.c_int),
+        ('til_or_since', ctypes.c_ulong),
+        ('idle', ctypes.c_ulong),
+        ('eventMask', ctypes.c_ulong)
+    ]
+
+class UserActivityDetector:
+    def __init__(self):
+        self._available = False
+        try:
+            self._x11 = ctypes.cdll.LoadLibrary('libX11.so.6')
+            self._xss = ctypes.cdll.LoadLibrary('libXss.so.1')
+            self._available = True
+        except Exception:
+            self._available = False
+
+    def _ensure_env(self):
+        if not os.environ.get("DISPLAY"):
+            os.environ["DISPLAY"] = ":0"
+        if not os.environ.get("XAUTHORITY"):
+            for auth in glob.glob("/home/*/.Xauthority") + glob.glob("/run/user/*/gdm/Xauthority"):
+                if os.path.exists(auth):
+                    os.environ["XAUTHORITY"] = auth
+                    break
+
+    def get_idle_seconds(self) -> float:
+        """Returns seconds since the user last touched keyboard or mouse."""
+        if not self._available:
+            return 0.0
+        self._ensure_env()
+        display = self._x11.XOpenDisplay(None)
+        if not display:
+            return 0.0
+        try:
+            root = self._x11.XDefaultRootWindow(display)
+            info = self._xss.XScreenSaverAllocInfo()
+            self._xss.XScreenSaverQueryInfo(display, root, info)
+            idle_ms = XScreenSaverInfo.from_address(info).idle
+            self._x11.XFree(info)
+            return idle_ms / 1000.0
+        finally:
+            self._x11.XCloseDisplay(display)
+
+def log(msg):
+    ts = datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}", flush=True)
+
+def update_auto_state(current_prime, remaining_sec, status_text):
+    try:
+        data = {
+            "tier": f"p{current_prime}",
+            "prime": current_prime,
+            "window_minutes": INVERTED_WINDOWS.get(current_prime, current_prime),
+            "remaining_seconds": round(remaining_sec, 1),
+            "status": status_text,
+            "timestamp": time.time()
+        }
+        with open(AUTO_STATE_FILE + ".tmp", "w") as f:
+            json.dump(data, f)
+        os.replace(AUTO_STATE_FILE + ".tmp", AUTO_STATE_FILE)
+    except Exception:
+        pass
+
+def apply_tier(prime: int, live: bool):
+    tier_id = f"p{prime}"
+    if live:
+        log(f"⚡ [LIVE] Applying hardware shift to {tier_id.upper()}...")
+        cmd = f"/usr/local/bin/changestate {tier_id}" if os.geteuid() == 0 else f"pkexec /usr/local/bin/changestate {tier_id}"
+        os.system(cmd)
+    else:
+        log(f"🔍 [SIMULATION] Would apply hardware shift: changestate {tier_id}")
+
+def run_adaptive_loop(start_prime=13, seconds_per_prime_minute=60.0, floor_prime=2, ceiling_prime=29, wake_prime=11, live=True):
+    if start_prime not in AUTO_PRIME_LADDER:
+        sys.exit(f"Error: Start prime {start_prime} is not in AUTO_PRIME_LADDER: {AUTO_PRIME_LADDER}")
+    if floor_prime not in AUTO_PRIME_LADDER or ceiling_prime not in AUTO_PRIME_LADDER or wake_prime not in AUTO_PRIME_LADDER:
+        sys.exit(f"Error: Floor/Ceiling/Wake primes must be in {AUTO_PRIME_LADDER}")
+    if floor_prime > ceiling_prime:
+        sys.exit(f"Error: Floor P{floor_prime} cannot be higher than Ceiling P{ceiling_prime}")
+
+    detector = UserActivityDetector()
+    current_prime = max(floor_prime, min(start_prime, ceiling_prime))
+    current_idx = AUTO_PRIME_LADDER.index(current_prime)
+    floor_idx = AUTO_PRIME_LADDER.index(floor_prime)
+    ceiling_idx = AUTO_PRIME_LADDER.index(ceiling_prime)
+    wake_idx = AUTO_PRIME_LADDER.index(wake_prime)
+
+    log("=" * 65)
+    log(" ChangeState: Inverted Harmonic Adaptive Scaling Daemon")
+    log(f" Mode: {'⚡ LIVE HARDWARE' if live else '🔍 DRY RUN / SIMULATION'}")
+    log(f" Envelope: [Floor: P{floor_prime} ── Ceiling: P{ceiling_prime}] (P0 & P31 manual only)")
+    log(f" Wakeup Baseline: P{wake_prime} (Snaps here on wake)")
+    log(f" Active Tier: P{current_prime}")
+    log(f" Cadence: Inverted Prime Windows (P2->29m, P13->11m, P29->2m)")
+    log(f" Time Scale: 1 prime minute = {seconds_per_prime_minute}s")
+    log(" Activity Rule: User input (mouse/keyboard) is the sole metric.")
+    log("=" * 65)
+
+    apply_tier(current_prime, live)
+    is_idling = False
+
+    while True:
+        current_prime = AUTO_PRIME_LADDER[current_idx]
+        window_minutes = INVERTED_WINDOWS.get(current_prime, 11)
+        window_duration_sec = window_minutes * seconds_per_prime_minute
+        log(f"⏳ Monitoring window: P{current_prime} (Window: {window_minutes}m -> {window_duration_sec:.1f}s)")
+
+        window_start = time.time()
+        activity_detected = False
+        prev_idle = detector.get_idle_seconds()
+
+        tick_interval = 0.5 if seconds_per_prime_minute < 5 else 2.0
+        while (time.time() - window_start) < window_duration_sec:
+            rem = window_duration_sec - (time.time() - window_start)
+            update_auto_state(current_prime, rem, "active" if activity_detected else "monitoring")
+            time.sleep(tick_interval)
+            current_idle = detector.get_idle_seconds()
+
+            if current_idle < prev_idle or current_idle < 1.0:
+                activity_detected = True
+                if is_idling:
+                    break
+            prev_idle = current_idle
+
+        # Evaluate window outcome
+        if activity_detected:
+            if is_idling and current_idx < wake_idx:
+                next_idx = min(ceiling_idx, max(floor_idx, wake_idx))
+                log(f"🟢 User wake detected! Snapping directly to Wake Baseline: P{current_prime} -> P{AUTO_PRIME_LADDER[next_idx]}")
+            else:
+                next_idx = min(ceiling_idx, current_idx + 1)
+                if next_idx > current_idx:
+                    log(f"🟢 User activity sustained! Stepping UP: P{current_prime} -> P{AUTO_PRIME_LADDER[next_idx]}")
+                else:
+                    log(f"🟢 User activity sustained, already at ceiling P{current_prime}. Maintaining tier.")
+
+            is_idling = False
+            if next_idx != current_idx:
+                current_idx = next_idx
+                apply_tier(AUTO_PRIME_LADDER[current_idx], live)
+        else:
+            is_idling = True
+            if current_idx > floor_idx:
+                next_idx = current_idx - 1
+                log(f"💤 No user activity ({window_minutes}m idle). Stepping DOWN: P{current_prime} -> P{AUTO_PRIME_LADDER[next_idx]}")
+                current_idx = next_idx
+                apply_tier(AUTO_PRIME_LADDER[current_idx], live)
+            else:
+                log(f"💤 No user activity, already at floor P{current_prime}. Maintaining tier.")
+
+def load_config():
+    cfg = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        cfg[k.strip().lower()] = v.strip()
+        except Exception:
+            pass
+    return cfg
+
+def main():
+    cfg = load_config()
+    default_range = cfg.get("range") or os.environ.get("CHANGESTATE_RANGE")
+    default_floor = int(cfg.get("min", cfg.get("floor", 7)))
+    default_ceiling = int(cfg.get("max", cfg.get("ceiling", 23)))
+
+    parser = argparse.ArgumentParser(description="ChangeState inverted adaptive capacity scaling daemon.")
+    parser.add_argument("--start", type=int, default=13, help="Starting prime tier (default: 13)")
+    parser.add_argument("--min", "--floor", dest="floor", type=int, default=default_floor, help=f"Minimum prime boundary / floor (default: {default_floor})")
+    parser.add_argument("--max", "--ceiling", dest="ceiling", type=int, default=default_ceiling, help=f"Maximum prime boundary / ceiling (default: {default_ceiling})")
+    parser.add_argument("--range", type=str, default=default_range, help="Set min and max together, e.g. --range 7:23 or 5-19")
+    parser.add_argument("--wake", type=int, default=11, help="Wake baseline prime (default: 11)")
+    parser.add_argument("--fast", type=float, default=60.0, help="Seconds per prime-minute (default: 60.0; use 1.0 for testing)")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate without hardware shifts")
+    args = parser.parse_args()
+
+    floor_val = args.floor
+    ceiling_val = args.ceiling
+
+    if args.range:
+        sep = ":" if ":" in args.range else ("-" if "-" in args.range else ",")
+        parts = args.range.split(sep)
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            floor_val, ceiling_val = int(parts[0]), int(parts[1])
+        else:
+            sys.exit(f"Error: Invalid --range format '{args.range}'. Use --range 7:23 or 5-19")
+
+    try:
+        run_adaptive_loop(
+            start_prime=args.start,
+            seconds_per_prime_minute=args.fast,
+            floor_prime=floor_val,
+            ceiling_prime=ceiling_val,
+            wake_prime=args.wake,
+            live=not args.dry_run
+        )
+    except KeyboardInterrupt:
+        log("\nDaemon stopped by user.")
+        update_auto_state(13, 0, "stopped")
+
+if __name__ == "__main__":
+    main()

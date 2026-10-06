@@ -15,17 +15,26 @@ def run_cmd(cmd):
         pass
 
 def write_sysfs(path_pattern, value):
-    """Write value to one or more sysfs files matching path_pattern."""
+    """Write value to every sysfs file matching path_pattern.
+
+    Globbing is non-recursive on purpose: `**` in /sys can follow symlink
+    cycles. Use stable paths (e.g. /sys/bus/*/devices/...) instead.
+    Never escalates privileges: the tool is expected to run as root. EBUSY is
+    ignored; any other failure is reported and the caller continues.
+    """
     for path in glob.glob(path_pattern):
         if os.path.exists(path):
             try:
                 with open(path, "w") as f:
                     f.write(str(value))
-            except PermissionError:
-                subprocess.run(f"echo {value} | sudo tee {path} > /dev/null", shell=True, check=False)
             except Exception as e:
                 if getattr(e, "errno", None) != 16:
                     print(f"[!] Warning writing to {path}: {e}")
+
+def scaled_cap(lo, hi, ratio):
+    """Proportional clock cap clamped to [lo, 0.80 * hi] (AGENTS.md §1.3)."""
+    ceiling = max(lo, 0.80 * hi)
+    return int(min(max(lo + ratio * (0.80 * hi - lo), lo), ceiling))
 
 def is_intel_cpu():
     """Detect if running on an Intel CPU with intel_pstate."""

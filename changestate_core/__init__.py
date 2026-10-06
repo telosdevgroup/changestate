@@ -2,8 +2,13 @@
 changestate_core package initialization.
 """
 
-from .hal import run_cmd, write_sysfs, is_intel_cpu, has_nvidia_gpu
-from .discovery import UNIVERSAL_PRIME_PCT, discover_hardware, get_capacity_tiers_metadata
+from .hal import run_cmd, write_sysfs, is_intel_cpu, has_nvidia_gpu, scaled_cap
+from .discovery import (
+    UNIVERSAL_PRIME_PCT,
+    discover_hardware,
+    discover_cpu_topology_order,
+    get_capacity_tiers_metadata
+)
 from .controllers import (
     set_cpu_cores,
     set_cpu_boost,
@@ -14,8 +19,7 @@ from .controllers import (
     set_radios,
     set_camera_power,
     set_mic_mute,
-    set_aux_services,
-    start_dev_stack
+    engage_metal_posture
 )
 from .status import (
     STATE_FILE,
@@ -30,6 +34,7 @@ __all__ = [
     "write_sysfs",
     "is_intel_cpu",
     "has_nvidia_gpu",
+    "scaled_cap",
     "UNIVERSAL_PRIME_PCT",
     "discover_hardware",
     "get_capacity_tiers_metadata",
@@ -42,8 +47,7 @@ __all__ = [
     "set_radios",
     "set_camera_power",
     "set_mic_mute",
-    "set_aux_services",
-    "start_dev_stack",
+    "engage_metal_posture",
     "STATE_FILE",
     "TELEMETRY_LOG",
     "collect_telemetry_snapshot",

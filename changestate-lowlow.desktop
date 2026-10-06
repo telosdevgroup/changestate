@@ -1,9 +1,0 @@
-[Desktop Entry]
-Version=1.0
-Type=Application
-Name=State: LowLow
-Comment=Extreme battery saving, 4 cores, silent fans
-Exec=pkexec /home/dev/Code/changestate lowlow
-Icon=battery-low
-Terminal=false
-Categories=System;Settings;

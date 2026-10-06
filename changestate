@@ -1,20 +1,7 @@
 #!/usr/bin/env python3
 """
-changestate - Elastic Capacity Controller (Dynamic Hardware Resource Scaling)
-
-Universal Prime Capacity Philosophy:
-  Hardware capacity is allocated elastically across standardized prime capacity tiers:
-    P:2  = 6%   (Floor Capacity)
-    P:3  = 10%
-    P:5  = 16%
-    P:7  = 23%
-    P:11 = 35%
-    P:13 = 42%
-    P:17 = 55%
-    P:19 = 61%
-    P:23 = 75%  (The universal balanced sweet spot for heavy dev & gaming)
-    P:29 = 93%
-    P:31 = 100% (Full open throttle - uncapped hardware, turbo boost enabled)
+ChangeState: Discrete Prime-Core Stepping & Proportional Capacity Engine.
+Enforces acoustic, thermal, and electrical sanity on Linux workstations.
 """
 
 import sys
@@ -23,9 +10,11 @@ import json
 import subprocess
 
 # Ensure changestate_core can be imported even if invoked via symlink or pkexec
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
-from changestate_core.hal import run_cmd, write_sysfs
+from changestate_core.hal import run_cmd, write_sysfs, scaled_cap
 from changestate_core.discovery import (
     UNIVERSAL_PRIME_PCT,
     discover_hardware,
@@ -41,18 +30,18 @@ from changestate_core.controllers import (
     set_radios,
     set_camera_power,
     set_mic_mute,
-    set_aux_services,
-    start_dev_stack
+    engage_metal_posture
 )
 from changestate_core.status import (
     save_active_state,
     show_status
 )
 
-def launch_user_terminal(banner_title):
+def launch_user_terminal(banner_title, force=False):
     """Optionally spawn an interactive user terminal showing the new hardware state."""
     terminal_wanted = (
-        "--terminal" in sys.argv
+        force
+        or "--terminal" in sys.argv
         or "-t" in sys.argv
         or os.environ.get("CHANGESTATE_TERMINAL") == "1"
     )
@@ -75,9 +64,9 @@ def launch_user_terminal(banner_title):
     term_bin = "xfce4-terminal" if shutil.which("xfce4-terminal") else ("gnome-terminal" if shutil.which("gnome-terminal") else "x-terminal-emulator")
     
     if "xfce4-terminal" in term_bin:
-        exec_arg = f"-T \"State: {banner_title}\" -e 'bash -c \"echo \\\"=== State: {banner_title} active ===\\\"; exec bash\"'"
+        exec_arg = f'-T "State: {banner_title}" -e \'bash -c "echo \\\"=== State: {banner_title} active ===\\\"; exec bash"\''
     else:
-        exec_arg = f"--title=\"State: {banner_title}\" -- bash -c \"echo \\\"=== State: {banner_title} active ===\\\"; exec bash\""
+        exec_arg = f'--title="State: {banner_title}" -- bash -c "echo \\\"=== State: {banner_title} active ===\\\"; exec bash"'
 
     cmd = (
         f"su - {target_user} -c 'DISPLAY={display} DBUS_SESSION_BUS_ADDRESS={dbus} "
@@ -87,16 +76,56 @@ def launch_user_terminal(banner_title):
 
 def apply_prime(prime_count):
     """
-    Apply pure percentage-based elastic capacity scaling:
-      - Uses UNIVERSAL_PRIME_PCT map (e.g. P:23 is always 75% for everyone)
-      - Scales active cores: round((pct / 100) * total_cores)
-      - Scales CPU clock ceiling: min_freq + ratio * (0.80 * max_freq - min_freq)
-      - Scales GPU clock ceiling: min_gpu + ratio * (0.80 * max_gpu - min_gpu)
-      - Disables all auto/turbo boost features across CPU & GPU on sub-100% tiers
-      - Preserves automatic BIOS fan curve for safety
+    Apply percentage-based capacity scaling or P:0 MOM defensive posture.
     """
     hw = discover_hardware()
     total_threads = hw["total_cores"]
+
+    # Special handling for P:0 (MOM: Metal Over Moss)
+    if prime_count == 0:
+        pct = 0
+        ratio = 0.0
+        active_cores = 2
+        target_cpu_khz = hw["cpu_min_khz"]
+
+        print("[*] Engaging State MOM / P:0 (Metal Over Moss Defensive Posture)")
+        print(f"[*] Hardware Allocation: {active_cores}/{total_threads} Cores Active, CPU Cap {target_cpu_khz//1000} MHz Floor")
+
+        # Display / Keyboard: Backlight HIGH for dark ops
+        write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
+        set_camera_power(enabled=False)
+        set_mic_mute(mute=True)
+
+        # Physical Core Allocation & Clocks
+        set_cpu_cores(active_cores)
+        set_cpu_boost(False)
+        set_cpu_freq_cap(target_cpu_khz)
+
+        # Low power ACPI and powersupersave
+        write_sysfs("/sys/firmware/acpi/platform_profile", "low-power")
+        set_cpu_governor("powersave", epp="power")
+        write_sysfs("/sys/module/snd_hda_intel/parameters/power_save", 1)
+        write_sysfs("/sys/module/pcie_aspm/parameters/policy", "powersupersave")
+
+        # GPU min clamp & memory swappiness floor
+        set_gpu_clamp(0.0, hw)
+        set_memory_swappiness(0.0)
+
+        # Engage total radio silence, firewall shield, process cull
+        engage_metal_posture(active=True)
+
+        print(f"[-] Cores Active : {active_cores} / {total_threads} (P:0 Floor)")
+        print(f"[-] CPU Ceiling  : {target_cpu_khz//1000} MHz (Floor, Boost OFF)")
+        print(f"[-] Radios       : SILENT (All radios blocked, Ethernet jack active)")
+        print(f"[-] Defenses     : Metal Shield Active (Inbound DROP, Dev/Games Culled)")
+        print(f"[-] Backlight    : High (Dark-mode operations)")
+        print("[✓] Metal Over Moss active.")
+        launch_user_terminal("P:0 [MOM] Metal Over Moss Defensive Posture", force=True)
+        return
+
+    # Standard Prime Tiers (P:2 .. P:31)
+    # Ensure defensive posture is disengaged
+    engage_metal_posture(active=False)
 
     pct = UNIVERSAL_PRIME_PCT.get(prime_count)
     if pct is None:
@@ -109,7 +138,7 @@ def apply_prime(prime_count):
 
     ratio = pct / 100.0
     active_cores = max(1, min(round(ratio * total_threads), total_threads))
-    target_cpu_khz = int(hw["cpu_min_khz"] + ratio * (0.80 * hw["cpu_max_khz"] - hw["cpu_min_khz"]))
+    target_cpu_khz = scaled_cap(hw["cpu_min_khz"], hw["cpu_max_khz"], ratio)
 
     print(f"[*] Scaling to Prime P:{prime_count} (~{pct}% Capacity for this machine)")
     print(f"[*] Hardware Allocation: {active_cores}/{total_threads} Cores Active, CPU Cap {target_cpu_khz//1000} MHz (80% ceiling)")
@@ -118,8 +147,6 @@ def apply_prime(prime_count):
     write_sysfs("/sys/class/leds/platform::kbd_backlight/brightness", 2)
     set_camera_power(enabled=True)
     set_mic_mute(mute=False)
-    run_cmd("sudo systemctl start avahi-daemon")
-    set_aux_services(enable=True)
     set_radios(wifi=True, bluetooth=False)
 
     # 1. Physical Core Allocation
@@ -161,9 +188,6 @@ def apply_prime(prime_count):
     # 6. Memory & Swappiness Optimization
     set_memory_swappiness(ratio)
 
-    # 7. Keep LLM & Server stacks protected
-    start_dev_stack()
-
     print(f"[-] Cores Active : {active_cores} / {total_threads} ({pct}%)")
     if ratio >= 1.0:
         print(f"[-] CPU Ceiling  : {hw['cpu_max_khz']//1000} MHz (Uncapped, Turbo ON, Performance)")
@@ -171,13 +195,11 @@ def apply_prime(prime_count):
         print(f"[-] CPU Ceiling  : {target_cpu_khz//1000} MHz (Capped, Boost OFF)")
     if hw["gpu"]["vendor"] == "nvidia":
         if ratio >= 1.0:
-            p_def = hw["gpu"].get("power_default_w") or 115
-            print(f"[-] GPU Status   : Uncapped ({hw['gpu']['max_clk_mhz']} MHz Max, {p_def}W TGP, Auto-Boost ON)")
+            p_def = hw["gpu"].get("power_default_w")
+            tgp = f"{p_def}W TGP" if p_def else "factory TGP"
+            print(f"[-] GPU Status   : Uncapped ({hw['gpu']['max_clk_mhz']} MHz Max, {tgp}, Auto-Boost ON)")
         else:
-            g_min = hw["gpu"]["min_clk_mhz"]
-            g_max = hw["gpu"]["max_clk_mhz"]
-            g_target = int(g_min + ratio * (0.80 * g_max - g_min)) if g_max else "N/A"
-            print(f"[-] GPU Ceiling  : {g_target} MHz (Capped, Auto-Boost 0)")
+            print(f"[-] GPU Status   : Safe Clocks (-rgc reset, Auto-Boost 0, Display Protected)")
     print(f"[-] Fans         : Auto-Managed BIOS (Safe acoustics)")
     print(f"[✓] Elastic capacity adjusted to Prime P:{prime_count} (~{pct}% capacity).")
     launch_user_terminal(f"P:{prime_count} ({active_cores}/{total_threads} Cores / ~{pct}%)")
@@ -194,6 +216,7 @@ def main():
         print(f"  Total RAM   : {hw['mem_total_mb']} MB (Swap: {hw['swap_total_mb']} MB)")
         print(f"  GPU Vendor  : {hw['gpu']['vendor']} (Max Clock: {hw['gpu']['max_clk_mhz']} MHz)")
         print("\nUniversal Capacity Tiers (Scales across ANY host, 80% Max Cap):")
+        print(f"  p0 (mom) - P:0  (MOM: Metal Over Moss Defensive Posture -> 2 cores / Airgap / Firewall)")
         for p, pct in UNIVERSAL_PRIME_PCT.items():
             cores = max(1, round((pct / 100.0) * total_hw))
             sweet = " (75% Balanced Capacity)" if p == 23 else ""
@@ -212,6 +235,12 @@ def main():
         print(json.dumps(get_capacity_tiers_metadata()))
         return
 
+    if target in ("mom", "p0", "0"):
+        apply_prime(0)
+        save_active_state("P:0 (MOM)")
+        run_cmd('notify-send "ChangeState" "Engaged P:0 [MOM] Metal Over Moss Defensive Posture" -i security-high')
+        return
+
     prime_val = None
     if target.startswith("p") and target[1:].isdigit():
         prime_val = int(target[1:])
@@ -228,7 +257,7 @@ def main():
         return
 
     print(f"Error: Unknown capacity tier '{target}'")
-    valid_tiers = [f"p{p}" for p in UNIVERSAL_PRIME_PCT.keys()]
+    valid_tiers = ["mom (p0)", "max (p31)"] + [f"p{p}" for p in UNIVERSAL_PRIME_PCT.keys()]
     print(f"Choices: {', '.join(valid_tiers)}, status, tiers-json")
     sys.exit(1)
 

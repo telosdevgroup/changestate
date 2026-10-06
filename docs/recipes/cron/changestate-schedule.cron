@@ -1,0 +1,26 @@
+# /etc/cron.d/changestate-schedule
+#
+# ChangeState Fleet Capacity Schedule
+# Dynamically adjusts hardware resources to match work shifts and energy rates.
+# Format: m h dom mon dow user command
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# 06:00 Mon-Fri: Morning warm-up (P:23 - ~75% capacity, balanced compute & quiet fans)
+0 6 * * 1-5 root /usr/local/bin/changestate p23 > /var/log/changestate_cron.log 2>&1
+
+# 09:00 Mon-Fri: Peak business/build hours (P:29 - ~93% capacity, fast compilation)
+0 9 * * 1-5 root /usr/local/bin/changestate p29 > /var/log/changestate_cron.log 2>&1
+
+# 18:00 Mon-Fri: Evening stand-down (P:11 - ~35% capacity, quiet idle, low power)
+0 18 * * 1-5 root /usr/local/bin/changestate p11 > /var/log/changestate_cron.log 2>&1
+
+# 23:00 Every day: Deep overnight whisper mode (P:3 - ~10% capacity, minimum thermal footprint)
+0 23 * * * root /usr/local/bin/changestate p3 > /var/log/changestate_cron.log 2>&1
+
+# 02:00 Sunday: Scheduled heavy maintenance & batch backups (P:31 - 100% full throttle)
+0 2 * * 0 root /usr/local/bin/changestate p31 > /var/log/changestate_cron.log 2>&1
+
+# 05:00 Sunday: Restore to idle post-backup (P:7 - ~23% capacity)
+0 5 * * 0 root /usr/local/bin/changestate p7 > /var/log/changestate_cron.log 2>&1

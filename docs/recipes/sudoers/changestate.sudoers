@@ -1,0 +1,13 @@
+# /etc/sudoers.d/changestate
+#
+# Allow automation scripts, CI runners, and administrative accounts
+# to scale system capacity without interactive password prompts.
+
+# Standard distribution admin groups:
+%sudo ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+
+# Dedicated automation/runner service accounts (uncomment as needed):
+# gitlab-runner ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+# github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+# ansible-agent  ALL=(ALL) NOPASSWD: /usr/local/bin/changestate

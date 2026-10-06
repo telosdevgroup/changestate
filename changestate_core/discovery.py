@@ -23,6 +23,73 @@ UNIVERSAL_PRIME_PCT = {
     31: 100   # 100% (Full capacity, completely uncapped)
 }
 
+def discover_cpu_topology_order():
+    """
+    Discover CPU topology and return an allocation priority list:
+      1. Primary thread of each physical core (prioritizing P-cores over E-cores on hybrid CPUs)
+      2. Secondary SMT/Hyper-Threading threads
+      3. Any offline or unmapped CPU IDs
+    CPU 0 is always guaranteed at index 0.
+    """
+    cpu_nodes = glob.glob("/sys/devices/system/cpu/cpu[0-9]*")
+    total_cpus = max(len(cpu_nodes), 1)
+
+    atom_cpus, core_cpus = set(), set()
+    for pmu, cpu_set in [("cpu_atom", atom_cpus), ("cpu_core", core_cpus)]:
+        pmu_path = f"/sys/devices/{pmu}/cpus"
+        if os.path.exists(pmu_path):
+            try:
+                with open(pmu_path) as f:
+                    for part in f.read().strip().split(","):
+                        if "-" in part:
+                            s, e = map(int, part.split("-"))
+                            cpu_set.update(range(s, e + 1))
+                        elif part.isdigit():
+                            cpu_set.add(int(part))
+            except Exception:
+                pass
+
+    seen_siblings = set()
+    primary_cpus, secondary_cpus = [], []
+    for i in range(total_cpus):
+        top_file = f"/sys/devices/system/cpu/cpu{i}/topology/thread_siblings_list"
+        if not os.path.exists(top_file) or i in seen_siblings:
+            continue
+        s_list = []
+        try:
+            with open(top_file) as f:
+                for part in f.read().strip().split(","):
+                    if "-" in part:
+                        s, e = map(int, part.split("-"))
+                        s_list.extend(range(s, e + 1))
+                    elif part.isdigit():
+                        s_list.append(int(part))
+        except Exception:
+            s_list = [i]
+        s_list = sorted(set(s_list))
+        for sib in s_list:
+            seen_siblings.add(sib)
+        primary_cpus.append(s_list[0])
+        for sib in s_list[1:]:
+            secondary_cpus.append(sib)
+
+    remaining = [i for i in range(total_cpus) if i not in seen_siblings]
+
+    if core_cpus or atom_cpus:
+        p_primaries = [c for c in primary_cpus if c in core_cpus]
+        e_primaries = [c for c in primary_cpus if c in atom_cpus]
+        other_primaries = [c for c in primary_cpus if c not in core_cpus and c not in atom_cpus]
+        primary_cpus = p_primaries + e_primaries + other_primaries
+
+    alloc_order = []
+    for c in primary_cpus + secondary_cpus + remaining:
+        if c not in alloc_order:
+            alloc_order.append(c)
+
+    if 0 in alloc_order:
+        alloc_order.remove(0)
+    return [0] + alloc_order
+
 def discover_hardware():
     """
     Dynamically auto-discover hardware specifications of the current machine.

@@ -1,18 +1,30 @@
 """
 Hardware scaling controllers: CPU core hotplugging, clock caps,
-governors/EPP, GPU clamping, memory swappiness, radios, and services.
+governors/EPP, GPU clamping, memory swappiness, radios, and MOM defensive posture.
 """
 
-from .hal import run_cmd, write_sysfs, is_intel_cpu
-from .discovery import discover_hardware
+import subprocess
+from .hal import run_cmd, write_sysfs, is_intel_cpu, scaled_cap
+from .discovery import discover_hardware, discover_cpu_topology_order
 
 def set_cpu_cores(target_count):
-    """Dynamically set the number of active CPU cores (Core 0 always online)."""
-    total = discover_hardware()["total_cores"]
+    """
+    Dynamically set the number of active CPU cores using topology-aware ordering:
+    - Primary physical threads (and P-cores) are kept online first for max IPC/watt.
+    - SMT secondary threads are brought online only when scaling up, and offlined first.
+    - Core 0 is permanently pinned online.
+    """
+    order = discover_cpu_topology_order()
+    total = len(order)
     target = min(max(target_count, 1), total)
-    for i in range(1, total):
-        state = 1 if i < target else 0
-        write_sysfs(f"/sys/devices/system/cpu/cpu{i}/online", state)
+
+    active_set = set(order[:target])
+    # Core 0 is permanently online; hotplug remaining cores
+    for cpu_id in order:
+        if cpu_id == 0:
+            continue
+        state = 1 if cpu_id in active_set else 0
+        write_sysfs(f"/sys/devices/system/cpu/cpu{cpu_id}/online", state)
 
 def set_cpu_boost(enabled):
     """Enable or disable CPU turbo/boost across AMD and Intel CPUs."""
@@ -50,24 +62,16 @@ def set_gpu_clamp(ratio, hw):
         write_sysfs("/sys/class/drm/card*/device/power_dpm_force_performance_level", "auto")
 
     if hw["gpu"]["vendor"] == "nvidia":
+        # Always reset clock locks (-rgc) to prevent nvidia-modeset kernel driver hangs
+        run_cmd("nvidia-smi -rgc")
         if ratio >= 1.0:
-            # 100% Full Open Throttle: Reset clocks, restore factory power, enable auto-boost
-            run_cmd("nvidia-smi -rgc")
-            p_def = hw["gpu"].get("power_default_w") or 115
-            run_cmd(f"nvidia-smi -pl {p_def}")
+            p_def = hw["gpu"].get("power_default_w")
+            if p_def:  # Unknown default: leave the power limit untouched
+                run_cmd(f"nvidia-smi -pl {int(p_def)}")
             run_cmd("nvidia-smi --auto-boost-permission=1")
         else:
-            # Always revoke auto-boost permission on clamped tiers (no unexpected surges)
+            # Revoke auto-boost permission to prevent power surges without starving display modeset
             run_cmd("nvidia-smi --auto-boost-permission=0")
-            
-            g_min = hw["gpu"]["min_clk_mhz"]
-            g_max = hw["gpu"]["max_clk_mhz"]
-            if g_max > g_min:
-                # 80% maximum glass ceiling multiplier
-                g_ceiling = int(g_min + ratio * (0.80 * g_max - g_min))
-                run_cmd(f"nvidia-smi -lgc {g_min},{g_ceiling}")
-            else:
-                run_cmd("nvidia-smi -rgc")
 
 def set_memory_swappiness(ratio):
     """
@@ -87,18 +91,30 @@ def set_radios(wifi=True, bluetooth=False):
     run_cmd(f"rfkill {'unblock' if bluetooth else 'block'} bluetooth")
 
 def set_camera_power(enabled=True):
-    write_sysfs("/sys/devices/pci*/**/VPC2004:00/camera_power", 1 if enabled else 0)
+    """Lenovo IdeaPad ACPI camera power (stable platform-bus path)."""
+    write_sysfs("/sys/bus/platform/devices/VPC2004:*/camera_power", 1 if enabled else 0)
 
 def set_mic_mute(mute=False):
     run_cmd(f"amixer set Capture {'mute' if mute else 'unmute'}")
 
-def set_aux_services(enable=True):
-    services = ["cups", "cups-browsed", "ModemManager"]
-    action = "start" if enable else "stop"
-    for s in services:
-        run_cmd(f"sudo systemctl {action} {s}")
-
-def start_dev_stack():
-    """Ensure developmental databases and LLM servers stay alive."""
-    for s in ["mongod", "mongodb", "ollama"]:
-        run_cmd(f"sudo systemctl start {s}")
+def engage_metal_posture(active=True):
+    """
+    MOM (Metal Over Moss) Defensive Posture:
+    - active=True (P:0): Total radio silence (rfkill block all), kill heavy gaming/dev
+      processes (steam, mongod, ollama, docker), drop unsolicited inbound network traffic.
+    - active=False (P:2..P:31): Restore inbound traffic policy.
+    """
+    if active:
+        # 1. Total Radio Silence (Wired Ethernet untouched)
+        run_cmd("rfkill block all")
+        # 2. Strict defensive firewall (allow loopback & established sessions, drop unsolicited inbound)
+        run_cmd("iptables -C INPUT -i lo -j ACCEPT 2>/dev/null || iptables -A INPUT -i lo -j ACCEPT")
+        run_cmd("iptables -C INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT")
+        run_cmd("iptables -P INPUT DROP")
+        # 3. Kill heavy dev & gaming background loads
+        targets = ["steam", "steamwebhelper", "mongod", "ollama", "docker"]
+        for t in targets:
+            run_cmd(f"pkill -15 -f {t} 2>/dev/null")
+    else:
+        # Restore standard firewall policy
+        run_cmd("iptables -P INPUT ACCEPT")

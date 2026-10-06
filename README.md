@@ -1,17 +1,30 @@
 # ChangeState
 
-**Elastic Capacity Controller — Dynamic Hardware Resource Scaling for Linux**
 
-`changestate` is an unbloated, proportional hardware governor and native Linux Mint / Cinnamon panel applet. It auto-discovers your machine's hardware capabilities and maps overall system throughput to standardized prime capacity tiers (`P:2` through `P:31`), coordinating active CPU cores, clock ceilings, GPU frequencies, and memory caches with a single slider.
+> **Support Development:** [Sponsor on GitHub](https://github.com/sponsors/telosdevgroup) · [Tip / Support via Lemon Squeezy](https://avathings.com/changestate#tip)
 
 ---
 
-## Visual Interface & Terminal Status
+## Quick One-Liner Installation
 
-### Native Cinnamon Panel Applet
-Continuous capacity slider, real-time tier badge, and hardware diagnostic readout:
+Install ChangeState and configure the autonomous daemon:
 
-![ChangeState Cinnamon Panel Applet](assets/cinnamon-applet-panel.png)
+```bash
+curl -sSL https://raw.githubusercontent.com/telosdevgroup/changestate/main/install.sh | bash
+sudo systemctl enable --now changestate-auto
+```
+
+*(Installs the CLI to `/usr/local/bin/changestate` and enables the autonomous prime-stepping daemon.)*
+
+---
+
+## What It Is
+
+`changestate` is an unbloated, proportional hardware governor and autonomous scaling daemon for Linux. It auto-discovers your machine's hardware capabilities and maps overall system throughput to standardized prime capacity tiers (`P:2` through `P:31`), coordinating active CPU cores, clock ceilings, GPU frequencies, and memory caches.
+
+---
+
+## Terminal Status & Hardware Inspection
 
 ### ASCII Terminal Status Readout
 Instant hardware telemetry and capacity state inspected via `changestate status`:
@@ -39,18 +52,6 @@ Memory & Cooling:
 
 ---
 
-## Quick One-Liner Installation
-
-Install the ChangeState CLI to `/usr/local/bin/changestate` and register the Cinnamon desktop applet with a single command:
-
-```bash
-curl -sSL https://raw.githubusercontent.com/telosdevgroup/changestate/main/install.sh | bash
-```
-
-*(The script symlinks/copies the applet to `~/.local/share/cinnamon/applets/changestate@avathings.com` and installs the CLI to `/usr/local/bin/changestate`.)*
-
----
-
 ## Universal Prime Capacity Reference Table ($P:2 \dots P:31$)
 
 Every prime gear corresponds to a calibrated universal capacity ratio that dynamically dictates active cores, clock limits, and power targets:
@@ -68,6 +69,47 @@ Every prime gear corresponds to a calibrated universal capacity ratio that dynam
 | **`P:23`** | **75%** | 6 cores | 12 cores | 24 cores | **The Balanced Sweet Spot** — Full gaming & heavy development with zero fan panic loops. |
 | **`P:29`** | **93%** | 7 cores | 15 cores | 30 cores | High-throughput data ingestion, fast local compilation, and heavy batch runs. |
 | **`P:31`** | **100%** | 8 cores | 16 cores | 32 cores | **Full Throttle** — All clamps released, uncapped factory turbo boost, and maximum GPU TGP. |
+
+---
+
+## Autonomous Scaling Daemon (`changestate-auto`)
+
+In addition to manual CLI and applet control, ChangeState includes an autonomous background timing daemon (`changestate-auto.service`) that adaptively scales your system capacity without manual intervention or intrusive telemetry.
+
+### The Inverted Harmonic Cadence
+Traditional auto-scalers measure CPU load percentages, which spike chaotically during brief tasks. ChangeState monitors **user input activity** (keyboard, mouse, trackpad via X11 XScreenSaver) across **discrete prime time windows**.
+
+Under our **Inverted Harmonic Cadence**, high-power tiers operate on short leashes, while low-power tiers hold patiently before stepping down:
+
+| Capacity Tier | Evaluation Window | Decay Behavior |
+| :--- | :---: | :--- |
+| **`P:29`** (~93%) | **2 min** | Extremely short leash. Steps down rapidly if user load ceases. |
+| **`P:23`** (~75%) | **3 min** | Balanced peak window. Steps down to P:19 after 3m of inactivity. |
+| **`P:19`** (~61%) | **5 min** | Work session cooldown. |
+| **`P:17`** (~55%) | **7 min** | Medium active window. |
+| **`P:13`** (~42%) | **11 min** | Steady state holding pattern. |
+| **`P:11`** (~35%) | **13 min** | **The Wake Baseline** — Default landing tier on user return. |
+| **`P:7`** (~23%) | **17 min** | Deep idle buffer. |
+| **`P:5`** (~16%) | **19 min** | Quiet idle buffer. |
+| **`P:3`** (~10%) | **23 min** | Near-floor background hold. |
+| **`P:2`** (~6%) | **29 min** | Minimum capacity floor. Patiently holds for nearly half an hour. |
+
+### Core Autonomous Behaviors:
+1. **Autonomous Envelope (`[P:2 — P:29]`)**: The daemon strictly operates between `P:2` (floor) and `P:29` (ceiling). Extreme edge states—`P:0` (MOM Airgap) and `P:31` (Uncapped Turbo Boost)—are **strictly manual opt-in** and are never entered autonomously.
+2. **Wakeup Snap**: When idling below the baseline ($P < \text{P:11}$), any user input immediately breaks the idle window and **snaps straight to P:11**, restoring instant desktop responsiveness without sluggish stepping.
+3. **Sustained Activity Climb**: If user activity continues uninterrupted through an active evaluation window, the daemon steps up to the next prime tier ($P_{i+1}$) until reaching the ceiling at `P:29`.
+4. **Decay Gravity**: When you step away from the machine, upper tiers step down within 2–5 minutes. After extended inactivity, the machine settles into silent low-power tiers.
+
+```bash
+# Enable the background daemon
+sudo systemctl enable --now changestate-auto
+
+# Inspect live daemon decisions & remaining window countdown
+journalctl -u changestate-auto -f
+
+# Run simulation / dry run in fast-forward mode (1 prime minute = 1 second)
+./changestate-auto --dry-run --fast 1.0
+```
 
 ---
 
@@ -118,21 +160,22 @@ sudo changestate p31
 
 ---
 
-## Licensing: The Honorable Dual Model
+## Remote Fleet, Lab & Headless Operations
 
-ChangeState is built with zero DRM, zero activation keys, zero telemetry, and zero nag screens. The codebase is 100% identical for everyone. We operate under a transparent, fair-use honor system:
+`changestate` is designed from the ground up to orchestrate bare-metal infrastructure, compute labs, and remote headless servers without any desktop or GUI requirement.
 
-```
-┌───────────────────────────────────────┬───────────────────────────────────────┐
-│              PERSONAL                 │              COMMERCIAL               │
-├───────────────────────────────────────┼───────────────────────────────────────┤
-│ For personal laptops, rigs, & labs.   │ For corporate & commercial hardware.  │
-│                                       │                                       │
-│ Free & Open (Voluntary Tip Jar)       │ $25 / seat (One-time flat fee)        │
-│ [ Drop a Tip ($1 - $5) ]              │ [ Purchase Commercial Registration ]  │
-│                                       │ Includes instant tax invoice & PDF    │
-└───────────────────────────────────────┴───────────────────────────────────────┘
-```
+- 🚀 **[Ansible Fleet Orchestration Guide](docs/ansible-fleet-orchestration.md)** — Deploy across dozens of Linux nodes and coordinate capacity with ready-to-run Ansible playbooks:
+  - Playbook: [Deploy & Baseline Capacity](docs/recipes/ansible/changestate-deploy.yml)
+  - Playbook: [On-Demand Fleet Capacity Shifter](docs/recipes/ansible/changestate-tier-switch.yml)
+- ⏱️ **[Scheduled Capacity with Cron & Systemd](docs/cron-and-scheduled-capacity.md)** — Automate day/night compute shifts, power-rate savings, and scheduled cooldown cycles:
+  - Crontab recipe: [/etc/cron.d/changestate-schedule](docs/recipes/cron/changestate-schedule.cron)
+  - Systemd units: [changestate@.service](docs/recipes/systemd/changestate@.service), [Day Timer](docs/recipes/systemd/changestate-day.timer), [Night Timer](docs/recipes/systemd/changestate-night.timer)
+- 🖥️ **[Headless Server & Lab Deployment](docs/headless-server-deployment.md)** — Zero desktop dependencies, remote SSH telemetry, and non-interactive sudoers rules:
+  - Security recipe: [Passwordless /etc/sudoers.d snippet](docs/recipes/sudoers/changestate.sudoers)
+  - CI/CD recipe: [GitLab CI Runner Capacity Stepper](docs/recipes/ci-cd/gitlab-ci-changestate.yml)
 
-- **Personal Use**: 100% free and open for individual rigs, hobbyists, students, and home labs. If it saved your laptop battery or kept your workspace quiet, voluntary contributions can be dropped into the [Personal Tip Jar](https://avathings.com/changestate#tip).
-- **Commercial Use**: If you or your team use ChangeState on hardware owned, leased, or reimbursed by a commercial entity, please support ongoing development by purchasing a [Commercial Seat ($25 flat / seat)](https://avathings.com/changestate#commercial). Checkout automatically generates an official tax invoice and downloadable PDF license certificate for corporate expense accounting.
+---
+
+## License
+
+Free and open source under the MIT License. See [LICENSE](LICENSE) for details.

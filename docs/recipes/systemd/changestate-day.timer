@@ -1,0 +1,13 @@
+[Unit]
+Description=ChangeState Day Shift Capacity (P:23)
+RefuseManualStart=no
+RefuseManualStop=no
+
+[Timer]
+# Fire at 08:00 AM Monday through Friday
+OnCalendar=Mon..Fri *-*-* 08:00:00
+Persistent=true
+Unit=changestate@p23.service
+
+[Install]
+WantedBy=timers.target

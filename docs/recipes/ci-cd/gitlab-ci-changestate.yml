@@ -1,0 +1,37 @@
+# .gitlab-ci.yml
+# Dynamic capacity shifting for self-hosted bare-metal GitLab CI runners
+# Requirements: runner user must have passwordless sudo for /usr/local/bin/changestate
+
+stages:
+  - prepare
+  - build
+  - test
+  - cleanup
+
+before_script:
+  # Check runner capacity before running tasks
+  - changestate status | grep "Active Level" || true
+
+build_heavy_binary:
+  stage: build
+  tags:
+    - bare-metal-lab
+  script:
+    - echo "Scaling runner up to P:31 (100% capacity / uncapped boost) for heavy compilation..."
+    - sudo changestate p31
+    - ./scripts/build-all.sh
+  after_script:
+    - echo "Compilation finished. Scaling runner back to P:11 to conserve power and reduce heat..."
+    - sudo changestate p11
+
+run_unit_tests:
+  stage: test
+  tags:
+    - bare-metal-lab
+  script:
+    - echo "Running unit tests at P:17 (balanced, cool thermal profile)..."
+    - sudo changestate p17
+    - pytest tests/unit/
+  after_script:
+    - echo "Returning runner to idle baseline P:7..."
+    - sudo changestate p7

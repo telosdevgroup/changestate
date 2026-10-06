@@ -1,0 +1,31 @@
+---
+# changestate-tier-switch.yml
+# Ad-hoc or orchestrator playbook to set target capacity across host groups
+# Usage: ansible-playbook -i hosts changestate-tier-switch.yml -e "target_tier=p23" -l workers
+- name: Shift Fleet Capacity Tier
+  hosts: compute_nodes
+  become: true
+  vars:
+    target_tier: "p23"
+    bin_target: "/usr/local/bin/changestate"
+
+  tasks:
+    - name: Validate target_tier input
+      ansible.builtin.assert:
+        that:
+          - target_tier is regex('^(p[0-9]+|mom)$')
+        fail_msg: "target_tier must be a valid prime tier (e.g., p2, p11, p23, p31) or mom"
+
+    - name: Shift node capacity to {{ target_tier }}
+      ansible.builtin.command: "{{ bin_target }} {{ target_tier }}"
+      register: shift_result
+      changed_when: true
+
+    - name: Record post-shift status
+      ansible.builtin.command: "{{ bin_target }} status"
+      register: post_status
+      changed_when: false
+
+    - name: Display current node state summary
+      ansible.builtin.debug:
+        msg: "{{ post_status.stdout_lines[:5] }}"

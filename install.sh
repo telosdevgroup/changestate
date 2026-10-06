@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_RAW_URL="https://raw.githubusercontent.com/telosdevgroup/changestate/main"
 INSTALL_DIR="/opt/changestate"
 BIN_TARGET="/usr/local/bin/changestate"
-APPLET_UUID="changestate@avathings.com"
-APPLET_TARGET_DIR="$HOME/.local/share/cinnamon/applets/$APPLET_UUID"
+AUTO_BIN_TARGET="/usr/local/bin/changestate-auto"
+SERVICE_TARGET="/etc/systemd/system/changestate-auto.service"
 
 echo "============================================================"
-echo "          ChangeState Installer & Applet Setup             "
+echo "          ChangeState & changestate-auto Installer          "
 echo "============================================================"
 
 # Check system dependencies
@@ -32,9 +31,17 @@ if [ -n "$SCRIPT_DIR" ]; then
     sudo chmod +x "$BIN_TARGET"
     echo "✓ ChangeState CLI linked to $BIN_TARGET"
 
-    mkdir -p "$(dirname "$APPLET_TARGET_DIR")"
-    ln -sfn "$SCRIPT_DIR/cinnamon-applet/$APPLET_UUID" "$APPLET_TARGET_DIR"
-    echo "✓ Cinnamon applet linked to $APPLET_TARGET_DIR"
+    if [ -f "$SCRIPT_DIR/changestate-auto" ]; then
+        sudo ln -sf "$SCRIPT_DIR/changestate-auto" "$AUTO_BIN_TARGET"
+        sudo chmod +x "$AUTO_BIN_TARGET"
+        echo "✓ ChangeState Auto daemon linked to $AUTO_BIN_TARGET"
+    fi
+
+    if [ -f "$SCRIPT_DIR/changestate-auto.service" ]; then
+        sudo cp "$SCRIPT_DIR/changestate-auto.service" "$SERVICE_TARGET"
+        sudo systemctl daemon-reload
+        echo "✓ ChangeState Auto service installed to $SERVICE_TARGET"
+    fi
 else
     echo "• Fetching latest ChangeState from GitHub..."
     TMP_DIR=$(mktemp -d /tmp/changestate-install.XXXXXX)
@@ -47,20 +54,27 @@ else
     sudo mkdir -p "$INSTALL_DIR"
     sudo cp -r "$TMP_DIR/changestate/changestate" "$TMP_DIR/changestate/changestate_core" "$INSTALL_DIR/"
     sudo chmod +x "$INSTALL_DIR/changestate"
-
     sudo ln -sf "$INSTALL_DIR/changestate" "$BIN_TARGET"
     echo "✓ ChangeState CLI installed to $BIN_TARGET"
 
-    mkdir -p "$(dirname "$APPLET_TARGET_DIR")"
-    rm -rf "$APPLET_TARGET_DIR"
-    cp -r "$TMP_DIR/changestate/cinnamon-applet/$APPLET_UUID" "$APPLET_TARGET_DIR"
-    echo "✓ Cinnamon applet installed to $APPLET_TARGET_DIR"
+    if [ -f "$TMP_DIR/changestate/changestate-auto" ]; then
+        sudo cp "$TMP_DIR/changestate/changestate-auto" "$INSTALL_DIR/"
+        sudo chmod +x "$INSTALL_DIR/changestate-auto"
+        sudo ln -sf "$INSTALL_DIR/changestate-auto" "$AUTO_BIN_TARGET"
+        echo "✓ ChangeState Auto daemon installed to $AUTO_BIN_TARGET"
+    fi
+
+    if [ -f "$TMP_DIR/changestate/changestate-auto.service" ]; then
+        sudo cp "$TMP_DIR/changestate/changestate-auto.service" "$SERVICE_TARGET"
+        sudo systemctl daemon-reload
+        echo "✓ ChangeState Auto service installed to $SERVICE_TARGET"
+    fi
 fi
 
 echo ""
 echo "============================================================"
 echo "Installation complete!"
 echo "• Test CLI with: changestate status"
-echo "• Add Applet: Right-click Cinnamon Panel -> Applets -> ChangeState"
-echo "  (or restart Cinnamon panel with Alt+F2 -> r -> Enter)"
+echo "• Enable Auto Daemon: sudo systemctl enable --now changestate-auto"
+echo "• Check Auto Status: systemctl status changestate-auto"
 echo "============================================================"

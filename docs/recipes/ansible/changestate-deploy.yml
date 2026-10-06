@@ -1,0 +1,62 @@
+---
+# changestate-deploy.yml
+# Ansible Playbook to deploy and orchestrate ChangeState across a Linux fleet
+- name: Deploy ChangeState to Linux Nodes
+  hosts: compute_nodes
+  become: true
+  vars:
+    changestate_repo: "https://github.com/telosdevgroup/changestate.git"
+    changestate_version: "main"
+    install_dir: "/opt/changestate"
+    bin_target: "/usr/local/bin/changestate"
+    default_tier: "p11"
+
+  tasks:
+    - name: Ensure prerequisite packages are installed
+      ansible.builtin.package:
+        name:
+          - python3
+          - git
+        state: present
+
+    - name: Clone ChangeState repository
+      ansible.builtin.git:
+        repo: "{{ changestate_repo }}"
+        dest: "{{ install_dir }}"
+        version: "{{ changestate_version }}"
+        force: true
+
+    - name: Ensure changestate executable has correct permissions
+      ansible.builtin.file:
+        path: "{{ install_dir }}/changestate"
+        mode: "0755"
+        owner: root
+        group: root
+
+    - name: Symlink changestate binary to PATH
+      ansible.builtin.file:
+        src: "{{ install_dir }}/changestate"
+        dest: "{{ bin_target }}"
+        state: link
+        force: true
+
+    - name: Install sudoers rule for non-interactive execution
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/changestate
+        content: |
+          # Allow members of sudo or wheel to run changestate without password
+          %sudo ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+          %wheel ALL=(ALL) NOPASSWD: /usr/local/bin/changestate
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"
+
+    - name: Verify ChangeState installation
+      ansible.builtin.command: "{{ bin_target }} --help"
+      register: cs_check
+      changed_when: false
+
+    - name: Apply default baseline capacity tier
+      ansible.builtin.command: "{{ bin_target }} {{ default_tier }}"
+      when: default_tier is defined and default_tier != ""
