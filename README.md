@@ -119,9 +119,14 @@ If you'd rather not think about it, `changestate-auto` runs in the background an
 It pays attention to one thing: **are you there?** 👀 It checks for keyboard, mouse, and trackpad activity. It ignores CPU load, so a brief spike doesn't make it jump around.
 
 - 🚶 **Walk away** and it slowly steps down. Busy levels give up fast, and sleepy levels are patient.
-- 👋 **Come back** and it jumps straight up to `P:11`, so the machine is never sluggish when you return.
+- 👋 **Come back** and it snaps straight to `P:11` (see below).
 - 💪 **Keep working** and it climbs one level at a time, as high as `P:29`.
 - 🛑 It never goes to `P:0` or `P:31` on its own. Those are yours to choose.
+
+> ### 👋 The `P:11` wake-up snap
+> Let the machine drift down to the quiet levels (`P:2` through `P:7`), then touch the keyboard or mouse: it resets straight to **`P:11`**. It doesn't creep back up one step at a time, so you never sit waiting on a sleepy machine.
+>
+> `P:11` is your wake-up baseline. If you're already at `P:11` or higher, nothing snaps. It just keeps climbing as you work.
 
 How long it waits before stepping down:
 
