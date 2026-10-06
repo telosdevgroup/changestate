@@ -224,7 +224,7 @@ It works fine without a desktop too:
 
 If it's useful to you, you can [sponsor on GitHub](https://github.com/sponsors/telosdevgroup) or [leave a tip](https://avathings.com/changestate#tip).
 
-Running it on a whole fleet? Once you're past 3 to 7 machines (we're flexible, so just ask), please consider a [volume license](https://avathings.com/changestate#volume). We keep it generous, and we'll gladly walk you through setup with **concierge onboarding**. 🤝 It's how we keep the project going.
+Running it on a whole fleet? Once you're past 3 to 7 machines (we're flexible, just email us), please consider a [volume license](mailto:telosdevgroup@gmail.com?subject=ChangeState%20volume%20license). We keep it generous, and we'll gladly walk you through setup with **concierge onboarding**. 🤝 It's how we keep the project going.
 
 ## 📜 License
 
