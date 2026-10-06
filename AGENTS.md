@@ -142,15 +142,21 @@ compstate/
 │   ├── controllers.py           # cores, boost, freq cap, governor/EPP, GPU clamp, swappiness, radios, camera, mic
 │   └── status.py                # state file, telemetry snapshot, `status` rendering
 ├── telemetry_logger.py          # Standalone JSONL telemetry daemon
+├── extras/                      # Standalone companion utilities (zero deps, native sysfs)
+│   └── battery-guard            # Hardware charge limit manager (50-100%, ACPI/sysfs)
 ├── install.sh                   # Installer (modifies system — requires user approval)
 ├── changestate-*.desktop        # Desktop launchers
 ├── assets/, LICENSE, README.md
+├── docs/                        # Topic guides, deep-dives, and recipes (all < 500 lines)
+│   ├── goodies.md               # Primer on bundled companion tools
+│   └── battery-guard.md         # Deep-dive on battery thresholds & EC actuation
 └── AGENTS.md
 ```
 
 **Public interface contracts:**
 - `changestate tiers-json` outputs JSON from `get_capacity_tiers_metadata()`.
 - `changestate p<N> [--terminal]` uses tier ids of the form `p<prime>`.
+- `battery-guard [status | 80 | 100 | on | off]`
 - **State files:**
   - `STATE_FILE` in `status.py` (`/run/changestate.state`; read by `telemetry_logger.py`).
   - `AUTO_STATE_FILE` (`/run/changestate-auto.json`; exports current tier, window remaining seconds, and status).
@@ -164,11 +170,12 @@ compstate/
 ```bash
 cd /home/dev/Code/tdg/compstate
 python3 -m py_compile changestate changestate-auto changestate_core/*.py telemetry_logger.py
-wc -l changestate changestate-auto changestate_core/*.py telemetry_logger.py install.sh   # all < 500
+wc -l changestate changestate-auto changestate_core/*.py telemetry_logger.py install.sh extras/* docs/*.md   # all < 500
 python3 changestate --help
 python3 changestate status
 python3 changestate tiers-json | python3 -m json.tool > /dev/null && echo OK
 python3 telemetry_logger.py --once | python3 -c 'import sys,json;[json.loads(l) for l in sys.stdin];print("JSONL OK")'
+./extras/battery-guard status > /dev/null && echo "BatteryGuard OK"
 ```
 
 ### 3.2 Apply a Tier (user approval required)

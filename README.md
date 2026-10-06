@@ -99,6 +99,7 @@ Drop an email to **[telosdevgroup@gmail.com](mailto:telosdevgroup@gmail.com?subj
 For the curious and anyone wanting to peek under the hood:
 
 - 📖 **[The Inner Workings: TL;DR](docs/harmonic-cadence.md):** The quick story on how reversing the primes turns your machine into a self-centering rubber band.
+- 🎁 **[Goodies & Extras](docs/goodies.md):** Standalone companion utilities including [BatteryGuard](docs/battery-guard.md).
 - ⚙️ **[Hardware Actuation & Kernel Interfaces](docs/hardware-actuation.md):** Exact details on CPU topology ordering, clock clamping math, ACPI platform profiles, and safe GPU driver handling.
 - 🏗️ **[System Architecture](docs/architecture.md):** The 5 architectural pillars (Core Engine, Timing Daemon, Device Heartbeat, Event Server, Client Surfaces).
 - 🤖 **[LLM Quickstart & Onboarding](docs/llm-quickstart.md):** High-density reference written for LLMs and autonomous dev-ops bots.
