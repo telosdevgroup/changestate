@@ -114,7 +114,7 @@ The two ends of the dial, `P:0` and `P:31`, are special. They're both manual onl
 
 ## 🔒 P:0, "MOM" lockdown
 
-**MOM stands for Metal Over Moss.** Hard, sealed metal, no soft growth getting in. It's the hunker-down mode: the machine goes quiet, closed off, and bare-bones.
+**MOM stands for Metal Over Moss.** Shrink the machine down to something as small as moss, then harden it with metal. Tiny footprint, tough shell. 🌱🔩 Everything unnecessary goes quiet, and what's left is sealed up tight.
 
 ```bash
 sudo changestate p0      # or: sudo changestate mom
