@@ -6,6 +6,8 @@ Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically 
 
 Works out of the box with AMD and Intel CPUs, and AMD and NVIDIA GPUs. Zero third-party dependencies.
 
+> *You love your hardware, and so do we. That's why we "conservativize" the operating range: to help maximize the effectiveness, thermal health, and longevity of your machines.*
+
 ---
 
 ## 🧭 Contents
