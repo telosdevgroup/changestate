@@ -199,6 +199,8 @@ How long it waits before stepping down:
 
 The waits get shorter as you go up because high power is expensive to leave running. The low levels are cheap, so they can wait.
 
+> 📖 **Want to know why this feels so natural?** Read [The Inner Workings: TL;DR](docs/harmonic-cadence.md) for the quick story on how reversing the primes turns your machine into a self-centering rubber band.
+
 ```bash
 journalctl -u changestate-auto -f          # watch it make decisions
 ./changestate-auto --dry-run --fast 1.0    # try it without touching anything
