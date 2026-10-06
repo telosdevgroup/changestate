@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: P11 (Battery Sweet Spot)
+Comment=Great battery life: browsing, email, docs (~35% capacity)
+Exec=pkexec changestate p11
+Icon=battery
+Terminal=false
+Categories=System;Settings;

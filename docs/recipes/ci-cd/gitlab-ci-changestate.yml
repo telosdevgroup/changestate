@@ -15,7 +15,7 @@ before_script:
 build_heavy_binary:
   stage: build
   tags:
-    - bare-metal-lab
+    - bare-metal
   script:
     - echo "Scaling runner up to P:31 (100% capacity / uncapped boost) for heavy compilation..."
     - sudo changestate p31
@@ -27,7 +27,7 @@ build_heavy_binary:
 run_unit_tests:
   stage: test
   tags:
-    - bare-metal-lab
+    - bare-metal
   script:
     - echo "Running unit tests at P:17 (balanced, cool thermal profile)..."
     - sudo changestate p17

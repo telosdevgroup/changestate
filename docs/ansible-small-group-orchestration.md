@@ -1,8 +1,8 @@
-# Ansible Fleet Orchestration Guide for ChangeState
+# Ansible Small Group Orchestration Guide for ChangeState
 
-Managing CPU cores, clock ceilings, and power budgets across a fleet of bare-metal Linux servers, workstation labs, or edge nodes usually involves BIOS changes, vendor IPMI scripts, or brittle ad-hoc sysfs loops. 
+Managing CPU cores, clock ceilings, and power budgets across a small group of Linux servers or workstations usually involves BIOS changes, vendor IPMI scripts, or brittle ad-hoc sysfs loops. 
 
-`changestate` provides a single, deterministic binary that dynamically auto-discovers each node's hardware and maps overall capacity to standardized prime tiers (`P:2` through `P:31`). This guide shows how to deploy ChangeState across an entire fleet and orchestrate capacity on demand using Ansible.
+`changestate` provides a single, deterministic binary that dynamically auto-discovers each node's hardware and maps overall capacity to standardized prime tiers (`P:2` through `P:31`). This guide shows how to deploy ChangeState across your whole group and orchestrate capacity on demand using Ansible.
 
 ---
 
@@ -14,7 +14,7 @@ Managing CPU cores, clock ceilings, and power budgets across a fleet of bare-met
 
 ---
 
-## 2. Deploying ChangeState to Your Fleet
+## 2. Deploying ChangeState to Your Small Group
 
 The deploy playbook installs prerequisites (`python3`, `git`), clones the engine, sets up `/usr/local/bin/changestate`, configures a secure non-interactive sudoers rule, and sets an initial baseline capacity.
 
@@ -78,7 +78,7 @@ ansible-playbook -i inventory.ini docs/recipes/ansible/changestate-deploy.yml
 
 ---
 
-## 3. Shifting Capacity Tiers Across Fleets
+## 3. Shifting Capacity Tiers Across a Small Group
 
 Once deployed, you can adjust capacity tiers across host groups instantly.
 
@@ -91,9 +91,9 @@ ansible-playbook -i inventory.ini docs/recipes/ansible/changestate-tier-switch.y
   -l build_workers \
   -e "target_tier=p29"
 
-# Drop lab nodes to whisper-quiet idle (P:7)
+# Drop workstations to whisper-quiet idle (P:7)
 ansible-playbook -i inventory.ini docs/recipes/ansible/changestate-tier-switch.yml \
-  -l lab_nodes \
+  -l group_nodes \
   -e "target_tier=p7"
 ```
 
@@ -110,7 +110,7 @@ ansible compute_nodes -i inventory.ini -m command -a "changestate status"
 
 ---
 
-## 4. Querying Fleet Telemetry & Capacity JSON
+## 4. Querying Group Telemetry & Capacity JSON
 
 ChangeState supports machine-readable output out of the box. You can aggregate node hardware stats and active levels into centralized logs or monitoring systems:
 

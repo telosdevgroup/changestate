@@ -19,7 +19,8 @@ from .controllers import (
     set_radios,
     set_camera_power,
     set_mic_mute,
-    engage_metal_posture
+    engage_metal_posture,
+    confirm_mom
 )
 from .status import (
     STATE_FILE,
@@ -48,6 +49,7 @@ __all__ = [
     "set_camera_power",
     "set_mic_mute",
     "engage_metal_posture",
+    "confirm_mom",
     "STATE_FILE",
     "TELEMETRY_LOG",
     "collect_telemetry_snapshot",

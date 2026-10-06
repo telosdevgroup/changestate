@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: P23 (Balanced Sweet Spot)
+Comment=All-around efficiency + performance winner (~75% capacity)
+Exec=pkexec changestate p23
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Settings;

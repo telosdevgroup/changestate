@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=State: P31 (Salt Flats)
+Comment=Flat out: full turbo, full GPU power. Also restores defaults.
+Exec=pkexec changestate p31
+Icon=weather-clear
+Terminal=false
+Categories=System;Settings;

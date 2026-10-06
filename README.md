@@ -6,6 +6,8 @@ Turn it down and your computer runs cooler, quieter, and sips power 🔋. Turn i
 
 Works with AMD and Intel processors, and with AMD and NVIDIA graphics.
 
+Rolling it out to a small group? Ready-made recipes and free help are below. 👇 [Small Group Toolkit](#-the-small-group-toolkit)
+
 ---
 
 ## ⚡ Quick start
@@ -98,13 +100,27 @@ Low numbers are quiet and cool 🧊. High numbers are fast and loud 🔥. Here's
 | 🌙 `P:3` | Barely awake. A terminal and a few monitors. |
 | 📖 `P:5` | Reading and light browsing, fans stay off. |
 | 🎧 `P:7` | Typing and music, cool to the touch. |
-| 🤖 `P:11` | Quiet background work, even a local AI model ticking along. |
+| 🔋 **`P:11`** | **Sweet spot: great battery life.** Browsing, email, docs. |
 | ⌨️ `P:13` | A normal day of coding. |
 | 🐳 `P:17` | Containers and compiling. |
 | 🧱 `P:19` | Builds, editor and a pile of browser tabs. |
-| 🎯 **`P:23`** | **The sweet spot. Games and heavy work without the fans freaking out.** |
+| 🎯 **`P:23`** | **Sweet spot: the all-around efficiency + performance winner.** |
 | 🏎️ `P:29` | Big jobs, fast. |
 | 🚀 **`P:31`** | **Salt Flats. Flat out, nothing in your way: full turbo, full GPU power.** |
+
+**Two sweet spots to remember:** `P:11` when you want to go easy on the battery, `P:23` when you want real speed without the noise. Most days you'll live between them.
+
+### 🖱️ One-click desktop icons
+
+Grab a launcher, drop it on your desktop or in your app menu, and click to switch. Each one asks for your password the usual way (`pkexec`) and needs ChangeState installed.
+
+| | Launcher |
+| :--- | :--- |
+| 🔋 **`P:11`** Sweet spot: great battery life | [changestate-p11.desktop](changestate-p11.desktop) |
+| 🎯 **`P:23`** Sweet spot: all-around winner | [changestate-p23.desktop](changestate-p23.desktop) |
+| 🚀 **`P:31`** Salt Flats, also your "restore defaults" button | [changestate-p31.desktop](changestate-p31.desktop) |
+
+After downloading, right-click the file and choose **Allow Launching** (or run `chmod +x changestate-p*.desktop`).
 
 Your machine decides what each level means in practice. On a 32-thread desktop, `P:23` keeps 24 threads running. On a laptop with fewer, it keeps proportionally fewer.
 
@@ -117,8 +133,11 @@ The two ends of the dial, `P:0` and `P:31`, are special. They're both manual onl
 **MOM stands for Metal Over Moss.** Shrink the machine down to something as small as moss, then harden it with metal. Tiny footprint, tough shell. 🌱🔩 Everything unnecessary goes quiet, and what's left is sealed up tight.
 
 ```bash
-sudo changestate p0      # or: sudo changestate mom
+sudo changestate p0      # prompts you to type 'MOM' to confirm
+sudo changestate p0 --confirm   # skips the confirmation prompt (for scripts / launchers)
 ```
+
+Because P:0 severs Wi-Fi, drops incoming connections, and halts services, running it interactively will ask you to type `MOM` to confirm. If running in an automation script or launcher, pass `--confirm`.
 
 - 📴 Wireless radios are switched off, so you'll lose Wi-Fi and Bluetooth.
 - 🧱 Incoming connections are blocked.
@@ -155,7 +174,7 @@ It pays attention to one thing: **are you there?** 👀 It checks for keyboard, 
 
 - 🚶 **Walk away** and it slowly steps down. Busy levels give up fast, and sleepy levels are patient.
 - 👋 **Come back** and it snaps straight to `P:11` (see below).
-- 💪 **Keep working** and it climbs one level at a time, as high as `P:29`.
+- 💪 **Keep working** and it climbs one level at a time, up to your ceiling (`P:23` by default, at most `P:29`; see [below](#%EF%B8%8F-choosing-how-low-and-high-it-may-go)).
 - 🛑 It never goes to `P:0` or `P:31` on its own. Those are yours to choose.
 
 > ### 👋 The `P:11` wake-up snap
@@ -186,6 +205,30 @@ journalctl -u changestate-auto -f          # watch it make decisions
 sudo systemctl stop changestate-auto       # turn it off
 ```
 
+### 🎛️ Choosing how low and high it may go
+
+By default automatic mode stays between **`P:7`** and **`P:23`**. You can change that. The allowed levels are `2, 3, 5, 7, 11, 13, 17, 19, 23, 29`.
+
+```bash
+changestate-auto --range 7:23     # floor and ceiling together (7-23 and 7,23 also work)
+changestate-auto --min 5 --max 29 # or set them separately (--floor / --ceiling also work)
+changestate-auto --wake 11        # the level it snaps to when you come back
+```
+
+`--range` wins over `--min` and `--max` if you give both.
+
+To make it permanent, use one of these:
+
+- **Config file** `/etc/changestate/auto.conf`, one `key=value` per line:
+  ```ini
+  range=7:29
+  # or: min=7 / max=29
+  ```
+- **Environment variable:** `CHANGESTATE_RANGE=7:29`
+- **The systemd service:** edit `ExecStart` in `changestate-auto.service`, for example `ExecStart=/usr/local/bin/changestate-auto --range 7:29`. Then run `sudo systemctl daemon-reload && sudo systemctl restart changestate-auto`.
+
+Command-line flags override the config file and environment variable.
+
 ---
 
 ## ✨ What it does for you
@@ -210,29 +253,21 @@ Modern chips burst to top speed for trivial tasks, pull a lot of power, and send
 
 ---
 
-## 🧰 The Fleet Toolkit
+## 🧰 The Small Group Toolkit
 
-Quiet racks, cooler labs, and a lower power bill, without babysitting each box. ChangeState ships with ready-to-run recipes, so you can go from one machine to fifty without writing your own glue. Everything runs headless, with no desktop needed.
+Quieter machines and a lower power bill, without babysitting each box. ChangeState ships with ready-to-run recipes, so you can go from one machine to a handful without writing your own glue. Everything runs headless, with no desktop needed.
 
 | | What you get | Grab it |
 | :--- | :--- | :--- |
-| 🧰 **Ansible** | Roll ChangeState out to every node and set a baseline level. Change the whole fleet's level on demand. | [Fleet guide](docs/ansible-fleet-orchestration.md) · [deploy playbook](docs/recipes/ansible/changestate-deploy.yml) · [tier switcher](docs/recipes/ansible/changestate-tier-switch.yml) |
-| ⏰ **Cron & systemd timers** | Fast by day, whisper-quiet at night, all on a schedule. Pick cron for simple or systemd timers for audit trails. | [Scheduling guide](docs/cron-and-scheduled-capacity.md) · [cron schedule](docs/recipes/cron/changestate-schedule.cron) · [day timer](docs/recipes/systemd/changestate-day.timer) · [night timer](docs/recipes/systemd/changestate-night.timer) |
+| 🧰 **Ansible** | Roll ChangeState out to every machine and set a baseline level. Change the whole group's level on demand. | [Group guide](docs/ansible-small-group-orchestration.md) · [deploy playbook](docs/recipes/ansible/changestate-deploy.yml) · [tier switcher](docs/recipes/ansible/changestate-tier-switch.yml) |
+| ⏰ **Cron & systemd timers** | Fast by day, whisper-quiet at night, all on a schedule. Pick cron for simple or systemd timers for easy-to-read logs. | [Scheduling guide](docs/cron-and-scheduled-capacity.md) · [cron schedule](docs/recipes/cron/changestate-schedule.cron) · [day timer](docs/recipes/systemd/changestate-day.timer) · [night timer](docs/recipes/systemd/changestate-night.timer) |
 | 🗄️ **Headless servers** | Runs over SSH on Ubuntu, Debian, RHEL, Rocky, Alma, Fedora and Arch. No GUI libraries. | [Server setup](docs/headless-server-deployment.md) |
 | 🔐 **Passwordless control** | A locked-down sudoers rule so automation can change levels without a password. | [sudoers snippet](docs/recipes/sudoers/changestate.sudoers) |
-| 🚦 **CI/CD** | Step a build runner up for the job and back down after. | [GitLab CI recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml) |
+| 🚦 **Self-hosted CI** | Step a build runner up for the job and back down after. | [GitLab CI recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml) |
 
-Want help rolling it out? See [the fleet section below](#-running-it-across-a-fleet). 👇
-
+Stuck or want a second pair of eyes on your setup? Email [telosdevgroup@gmail.com](mailto:telosdevgroup@gmail.com?subject=ChangeState%20help). Happy to help, no charge.
 
 ---
-
-## 🤝 Running it across a fleet?
-
-Once you're past 3 to 7 machines (we're flexible, just email us), please consider a [volume license](mailto:telosdevgroup@gmail.com?subject=ChangeState%20volume%20license). We keep it generous, bill by simple invoice, and we'll gladly walk you through setup with **concierge onboarding**. It's how we keep the project going.
-
-📧 **[telosdevgroup@gmail.com](mailto:telosdevgroup@gmail.com?subject=ChangeState%20volume%20license)**
-
 
 ## 📜 License
 

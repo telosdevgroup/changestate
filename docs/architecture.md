@@ -32,7 +32,7 @@ The system is structured around **5 core architectural pillars**:
 │    - [TBD / Planned]: Micro HTTP API (Zero deps)       │
 │    - Outbound Webhooks (POST state transitions)        │
 │    - Content Negotiation: JSON, Prometheus, SSE, MD    │
-│    - Inbound control & cluster fleet orchestration     │
+│    - Inbound control & small group orchestration       │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +58,7 @@ The adaptive governor managing dynamic elastic scaling:
 ### 3. Device Heartbeat Recorder (`telemetry_logger.py`)
 A minimal local recorder:
 - A simple heartbeat for the local machine: records timestamp, active prime tier, temperature, and CPU clock/load.
-- No heavy fleet dependencies: just a compact log showing how the machine is doing and confirming that `changestate-auto` is working as expected.
+- No heavy dependencies: just a compact log showing how the machine is doing and confirming that `changestate-auto` is working as expected.
 
 ### 4. Event / HTTP Server (Planned / TBD)
 Lightweight micro-server using Python's standard library:
@@ -68,7 +68,7 @@ Lightweight micro-server using Python's standard library:
   - `GET /metrics` (Prometheus)
   - `GET /status.md` (Markdown MOTD / CLI)
   - `GET /events` (Server-Sent Events streaming)
-- **Fleet Orchestration:** Optional authenticated control endpoint for compute cluster scaling.
+- **Small Group Orchestration:** Optional authenticated control endpoint for scaling a small group of machines.
 
 ### 5. Client Surfaces (CLI & Controls)
 Visibility and manual interaction:

@@ -30,7 +30,8 @@ from changestate_core.controllers import (
     set_radios,
     set_camera_power,
     set_mic_mute,
-    engage_metal_posture
+    engage_metal_posture,
+    confirm_mom
 )
 from changestate_core.status import (
     save_active_state,
@@ -216,7 +217,7 @@ def main():
         print(f"  Total RAM   : {hw['mem_total_mb']} MB (Swap: {hw['swap_total_mb']} MB)")
         print(f"  GPU Vendor  : {hw['gpu']['vendor']} (Max Clock: {hw['gpu']['max_clk_mhz']} MHz)")
         print("\nUniversal Capacity Tiers (Scales across ANY host, 80% Max Cap):")
-        print(f"  p0 (mom) - P:0  (MOM: Metal Over Moss Defensive Posture -> 2 cores / Airgap / Firewall)")
+        print(f"  p0 (mom) - P:0  (MOM: Metal Over Moss Defensive Posture -> 2 cores / Airgap / Firewall; asks you to type MOM, or pass --confirm)")
         for p, pct in UNIVERSAL_PRIME_PCT.items():
             cores = max(1, round((pct / 100.0) * total_hw))
             sweet = " (75% Balanced Capacity)" if p == 23 else ""
@@ -236,6 +237,8 @@ def main():
         return
 
     if target in ("mom", "p0", "0"):
+        if not confirm_mom("--confirm" in sys.argv):
+            sys.exit(1)
         apply_prime(0)
         save_active_state("P:0 (MOM)")
         run_cmd('notify-send "ChangeState" "Engaged P:0 [MOM] Metal Over Moss Defensive Posture" -i security-high')

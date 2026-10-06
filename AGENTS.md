@@ -37,7 +37,7 @@
 │    - [TBD / Planned]: Micro HTTP API (Zero deps)       │
 │    - Outbound Webhooks (POST state transitions)        │
 │    - Content Negotiation: JSON, Prometheus, SSE, MD    │
-│    - Inbound control & cluster fleet orchestration     │
+│    - Inbound control & small group orchestration       │
 └────────────────────────────────────────────────────────┘
 ```
 
@@ -100,7 +100,9 @@ Let `ratio = pct / 100`.
 **NVIDIA power limit at P:31:** restored to the detected `power_default_w`. If unknown, `-pl` is skipped. Never hardcode a wattage.
 
 ### 1.5 Adaptive Scaling Model (changestate-auto)
-- **Autonomous Envelope [P:2 ── P:29]:** Bounds autonomous transitions strictly between P:2 (floor) and P:29 (ceiling). Extremes P:0 (MOM) and P:31 (Max Uncapped Turbo) are strictly manual opt-in and are never entered autonomously.
+- **Autonomous Envelope [P:2 ── P:29]:** Autonomous transitions are bounded by a configurable floor and ceiling, which must be on the ladder `2, 3, 5, 7, 11, 13, 17, 19, 23, 29`. **Defaults: floor P:7, ceiling P:23.** P:2 and P:29 are the hard outer limits. Extremes P:0 (MOM) and P:31 (Max Uncapped Turbo) are strictly manual opt-in and are never entered autonomously.
+  - **Options:** `--range 7:23` (also `7-23`, `7,23`), `--min`/`--floor`, `--max`/`--ceiling`, `--wake`. `--range` overrides `--min`/`--max`.
+  - **Persistent config:** `/etc/changestate/auto.conf` (`range=`, `min=`/`floor=`, `max=`/`ceiling=`), `CHANGESTATE_RANGE` env var, or flags in the service `ExecStart`. CLI flags override the config file.
 - **Inverted Harmonic Cadence:** High capacity tiers have short leashes; low tiers hold patiently:
   `P2: 29m, P3: 23m, P5: 19m, P7: 17m, P11: 13m, P13: 11m, P17: 7m, P19: 5m, P23: 3m, P29: 2m`.
 - **Sole Metric for Activity:** User input (keyboard, mouse, trackpad) queried via X11 XScreenSaver idle time (`libXss.so.1`). CPU load percentages are intentionally ignored to prevent micro-burst false positives.

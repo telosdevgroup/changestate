@@ -1,6 +1,6 @@
-# Headless Server and Remote Lab Deployment
+# Headless Server and Remote Machine Deployment
 
-The core `changestate` engine is completely headless, dependency-free, and designed to run cleanly over SSH on bare-metal servers, compute rigs, or remote lab machines.
+The core `changestate` engine is completely headless, dependency-free, and designed to run cleanly over SSH on bare-metal servers, compute rigs, or remote machines.
 
 ---
 

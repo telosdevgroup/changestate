@@ -4,6 +4,7 @@ governors/EPP, GPU clamping, memory swappiness, radios, and MOM defensive postur
 """
 
 import subprocess
+import sys
 from .hal import run_cmd, write_sysfs, is_intel_cpu, scaled_cap
 from .discovery import discover_hardware, discover_cpu_topology_order
 
@@ -118,3 +119,22 @@ def engage_metal_posture(active=True):
     else:
         # Restore standard firewall policy
         run_cmd("iptables -P INPUT ACCEPT")
+
+def confirm_mom(assume_yes=False):
+    """
+    Guard for P:0 (MOM). Returns True if the user may proceed.
+    - assume_yes (--confirm): proceed without a prompt (scripts, launchers).
+    - Interactive terminal: the user must type MOM.
+    - Otherwise: refuse, since nobody is there to confirm.
+    """
+    if assume_yes:
+        return True
+    if not sys.stdin.isatty():
+        print("[!] P:0 (MOM) needs confirmation. Re-run with --confirm.")
+        return False
+    print("[!] P:0 (MOM) blocks ALL radios (Wi-Fi + Bluetooth), drops inbound traffic, and stops steam/docker/ollama/mongod.")
+    print("[!] Restore with: sudo changestate p31 (or any other tier).")
+    try:
+        return input("Type MOM to continue: ").strip().upper() == "MOM"
+    except EOFError:
+        return False

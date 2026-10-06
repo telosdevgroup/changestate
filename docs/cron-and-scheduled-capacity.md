@@ -1,15 +1,15 @@
 # Scheduled Capacity with Cron and Systemd Timers
 
-Hardware workloads are rarely constant. Build servers experience heavy activity during working hours and sit idle all night. In lab environments, keeping 50 workstations running at uncapped frequencies generates unnecessary heat, exhausts cooling infrastructure, and wastes power.
+Hardware workloads are rarely constant. Machines are rarely busy around the clock: heavy use by day, idle all night. Leaving them at uncapped frequencies generates unnecessary heat, makes fans work harder, and wastes power.
 
-By scheduling ChangeState with standard Linux `cron` or `systemd.timer` units, you can step machines up for workday shifts and step them down into whisper-cool idle tiers during off-hours—completely automatically and without touching the BIOS.
+By scheduling ChangeState with standard Linux `cron` or `systemd.timer` units, you can step machines up for busy hours and step them down into whisper-cool idle tiers during off-hours—completely automatically and without touching the BIOS.
 
 ---
 
 ## 1. Choosing Between Cron and Systemd Timers
 
 - **Cron (`/etc/cron.d`)**: Simple, familiar, portable across almost any UNIX/Linux system, and quick to set up in a single file.
-- **Systemd Timers**: Ideal for modern systemd environments. Supports monotonic timers, handles missed events across reboots via `Persistent=true`, and integrates directly with `journalctl` for audit trails.
+- **Systemd Timers**: Ideal for modern systemd environments. Supports monotonic timers, handles missed events across reboots via `Persistent=true`, and integrates directly with `journalctl` for easy-to-read logs.
 
 ---
 
@@ -17,7 +17,7 @@ By scheduling ChangeState with standard Linux `cron` or `systemd.timer` units, y
 
 The simplest way to schedule shifts is placing a crontab definition in `/etc/cron.d/changestate-schedule`.
 
-A production-ready schedule is provided at [`docs/recipes/cron/changestate-schedule.cron`](recipes/cron/changestate-schedule.cron):
+A ready-to-use schedule is provided at [`docs/recipes/cron/changestate-schedule.cron`](recipes/cron/changestate-schedule.cron):
 
 ```cron
 SHELL=/bin/bash
@@ -26,7 +26,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 # 06:00 Mon-Fri: Morning warm-up (P:23 - ~75% capacity, balanced compute & quiet fans)
 0 6 * * 1-5 root /usr/local/bin/changestate p23 > /var/log/changestate_cron.log 2>&1
 
-# 09:00 Mon-Fri: Peak business/build hours (P:29 - ~93% capacity, high throughput)
+# 09:00 Mon-Fri: Peak hours (P:29 - ~93% capacity, high throughput)
 0 9 * * 1-5 root /usr/local/bin/changestate p29 > /var/log/changestate_cron.log 2>&1
 
 # 18:00 Mon-Fri: Evening stand-down (P:11 - ~35% capacity, quiet idle, low power)
@@ -47,7 +47,7 @@ sudo chmod 0644 /etc/cron.d/changestate-schedule
 
 ---
 
-## 3. Approach B: Systemd Timers (Enterprise & Production)
+## 3. Approach B: Systemd Timers
 
 Systemd allows parametric instantiation via `changestate@.service`. You can trigger any tier simply by starting `changestate@<tier>.service`.
 
@@ -107,7 +107,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now changestate-day.timer changestate-night.timer
 ```
 
-### 4. Verification and Audit Logs
+### 4. Verification and Logs
 Check active timers and past transitions:
 ```bash
 # List scheduled timers and next trigger time

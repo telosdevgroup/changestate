@@ -1,6 +1,6 @@
 ---
 # changestate-deploy.yml
-# Ansible Playbook to deploy and orchestrate ChangeState across a Linux fleet
+# Ansible Playbook to deploy and orchestrate ChangeState across a small group of Linux machines
 - name: Deploy ChangeState to Linux Nodes
   hosts: compute_nodes
   become: true

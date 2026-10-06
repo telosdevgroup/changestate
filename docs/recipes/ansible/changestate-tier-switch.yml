@@ -2,7 +2,7 @@
 # changestate-tier-switch.yml
 # Ad-hoc or orchestrator playbook to set target capacity across host groups
 # Usage: ansible-playbook -i hosts changestate-tier-switch.yml -e "target_tier=p23" -l workers
-- name: Shift Fleet Capacity Tier
+- name: Shift Group Capacity Tier
   hosts: compute_nodes
   become: true
   vars:
