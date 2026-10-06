@@ -224,6 +224,8 @@ It works fine without a desktop too:
 
 If it's useful to you, you can [sponsor on GitHub](https://github.com/sponsors/telosdevgroup) or [leave a tip](https://avathings.com/changestate#tip).
 
+Running it on a whole fleet? If you're past 3 to 7 machines (we're flexible), please consider a [volume license](https://avathings.com/changestate#volume). It keeps the project going. 🙏
+
 ## 📜 License
 
 MIT. See [LICENSE](LICENSE).
