@@ -19,7 +19,7 @@ changestate status
 
 # pick a level
 sudo changestate p23     # a good everyday balance
-sudo changestate p31     # everything wide open
+sudo changestate p31     # Salt Flats: nothing in your way
 ```
 
 Want it to adjust itself while you work? Turn on automatic mode:
@@ -104,7 +104,7 @@ Low numbers are quiet and cool 🧊. High numbers are fast and loud 🔥. Here's
 | 🧱 `P:19` | Builds, editor and a pile of browser tabs. |
 | 🎯 **`P:23`** | **The sweet spot. Games and heavy work without the fans freaking out.** |
 | 🏎️ `P:29` | Big jobs, fast. |
-| 🚀 **`P:31`** | **Wide open. No limits, full turbo, full GPU power.** |
+| 🚀 **`P:31`** | **Salt Flats. Flat out, nothing in your way: full turbo, full GPU power.** |
 
 Your machine decides what each level means in practice. On a 32-thread desktop, `P:23` keeps 24 threads running. On a laptop with fewer, it keeps proportionally fewer.
 
@@ -114,7 +114,7 @@ The two ends of the dial, `P:0` and `P:31`, are special. They're both manual onl
 
 ## 🔒 P:0, "MOM" lockdown
 
-**MOM stands for Metal Over Moss.** It's the hunker-down mode: the machine goes quiet, closed off, and bare-bones.
+**MOM stands for Metal Over Moss.** Hard, sealed metal, no soft growth getting in. It's the hunker-down mode: the machine goes quiet, closed off, and bare-bones.
 
 ```bash
 sudo changestate p0      # or: sudo changestate mom
@@ -132,9 +132,9 @@ sudo changestate p0      # or: sudo changestate mom
 
 ---
 
-## 🚀 P:31, wide open
+## 🏁 P:31, Salt Flats
 
-Everything ChangeState does, undone. Turbo is on, clock limits are gone, and the GPU gets its full factory power back.
+Miles of flat, empty ground and nothing to slow you down. Every limit ChangeState sets is lifted: turbo is on, clock ceilings are gone, and the GPU gets its full factory power back. 🏎️💨
 
 ```bash
 sudo changestate p31
