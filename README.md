@@ -6,7 +6,23 @@ Turn it down and your computer runs cooler, quieter, and sips power 🔋. Turn i
 
 Works with AMD and Intel processors, and with AMD and NVIDIA graphics.
 
-Rolling it out to a small group? Ready-made recipes and free help are below. 👇 [Small Group Toolkit](#-the-small-group-toolkit)
+---
+
+## 🧭 Contents
+
+- [⚡ Quick start](#-quick-start)
+- [📦 Install](#-install)
+- [🕹️ Using it](#%EF%B8%8F-using-it)
+- [🔢 The levels](#-the-levels)
+- [🔒 P:0, "MOM" lockdown](#-p0-mom-lockdown)
+- [🏁 P:31, Salt Flats](#-p31-salt-flats)
+- [🤖 Automatic mode](#-automatic-mode)
+  - [The Inner Workings: TL;DR](docs/harmonic-cadence.md)
+  - [Choosing how low and high it may go](#%EF%B8%8F-choosing-how-low-and-high-it-may-go)
+- [✨ What it does for you](#-what-it-does-for-you)
+- [🛡️ What it won't do](#%EF%B8%8F-what-it-wont-do)
+- [🧰 The Small Group Toolkit](#-the-small-group-toolkit)
+- [📜 License](#-license)
 
 ---
 
