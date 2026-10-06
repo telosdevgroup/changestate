@@ -210,13 +210,20 @@ Modern chips burst to top speed for trivial tasks, pull a lot of power, and send
 
 ---
 
-## 🖥️ Servers, labs, and fleets
+## 🧰 The Fleet Toolkit
 
-It works fine without a desktop too:
+Quiet racks, cooler labs, and a lower power bill, without babysitting each box. ChangeState ships with ready-to-run recipes, so you can go from one machine to fifty without writing your own glue. Everything runs headless, with no desktop needed.
 
-- 🧰 [Ansible fleet guide](docs/ansible-fleet-orchestration.md): [deploy playbook](docs/recipes/ansible/changestate-deploy.yml), [tier switcher](docs/recipes/ansible/changestate-tier-switch.yml)
-- ⏰ [Cron and systemd schedules](docs/cron-and-scheduled-capacity.md): quieter at night, faster by day
-- 🗄️ [Headless server setup](docs/headless-server-deployment.md): [sudoers snippet](docs/recipes/sudoers/changestate.sudoers), [GitLab CI recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml)
+| | What you get | Grab it |
+| :--- | :--- | :--- |
+| 🧰 **Ansible** | Roll ChangeState out to every node and set a baseline level. Change the whole fleet's level on demand. | [Fleet guide](docs/ansible-fleet-orchestration.md) · [deploy playbook](docs/recipes/ansible/changestate-deploy.yml) · [tier switcher](docs/recipes/ansible/changestate-tier-switch.yml) |
+| ⏰ **Cron & systemd timers** | Fast by day, whisper-quiet at night, all on a schedule. Pick cron for simple or systemd timers for audit trails. | [Scheduling guide](docs/cron-and-scheduled-capacity.md) · [cron schedule](docs/recipes/cron/changestate-schedule.cron) · [day timer](docs/recipes/systemd/changestate-day.timer) · [night timer](docs/recipes/systemd/changestate-night.timer) |
+| 🗄️ **Headless servers** | Runs over SSH on Ubuntu, Debian, RHEL, Rocky, Alma, Fedora and Arch. No GUI libraries. | [Server setup](docs/headless-server-deployment.md) |
+| 🔐 **Passwordless control** | A locked-down sudoers rule so automation can change levels without a password. | [sudoers snippet](docs/recipes/sudoers/changestate.sudoers) |
+| 🚦 **CI/CD** | Step a build runner up for the job and back down after. | [GitLab CI recipe](docs/recipes/ci-cd/gitlab-ci-changestate.yml) |
+
+Want help rolling it out? See [the fleet section below](#-running-it-across-a-fleet). 👇
+
 
 ---
 
