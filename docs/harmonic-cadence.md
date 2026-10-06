@@ -1,6 +1,6 @@
-# The Inverted Prime Cadence (TL;DR)
+# The Inner Workings: TL;DR
 
-> **The Quick Summary:** Why reversing the prime numbers creates an elastic "rubber band" that keeps your computer cool, quiet, and fast without you ever touching a setting.
+> **Why ChangeState Feels Right:** How reversing the prime numbers creates an elastic "rubber band" that keeps your computer cool, quiet, and fast without you ever touching a setting.
 
 ---
 
