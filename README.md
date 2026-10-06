@@ -108,9 +108,44 @@ Low numbers are quiet and cool 🧊. High numbers are fast and loud 🔥. Here's
 
 Your machine decides what each level means in practice. On a 32-thread desktop, `P:23` keeps 24 threads running. On a laptop with fewer, it keeps proportionally fewer.
 
-There's also 🔒 **`P:0`**, a lockdown mode (`changestate mom`). It turns off wireless, blocks incoming connections, and runs on two cores. You have to ask for it.
+The two ends of the dial, `P:0` and `P:31`, are special. They're both manual only. Details below.
 
 ---
+
+## 🔒 P:0, "MOM" lockdown
+
+**MOM stands for Metal Over Moss.** It's the hunker-down mode: the machine goes quiet, closed off, and bare-bones.
+
+```bash
+sudo changestate p0      # or: sudo changestate mom
+```
+
+- 📴 Wireless radios are switched off, so you'll lose Wi-Fi and Bluetooth.
+- 🧱 Incoming connections are blocked.
+- 🪫 Heavy background processes are shut down.
+- 🧊 Only 2 cores run, at their lowest speed.
+
+**Getting out:** run `sudo changestate p31` (or any other level) from the machine itself. P:31 clears the lockdown and restores full power.
+
+> [!NOTE]
+> Since P:0 turns off Wi-Fi, don't use it over SSH or on a machine you can't touch. You'd lock yourself out.
+
+---
+
+## 🚀 P:31, wide open
+
+Everything ChangeState does, undone. Turbo is on, clock limits are gone, and the GPU gets its full factory power back.
+
+```bash
+sudo changestate p31
+```
+
+It's also the **"fix everything" button**. If something feels off, or you just want your machine back exactly as the factory shipped it, run this one.
+
+It's loud and hot by design. For daily use, `P:23` is usually the better pick.
+
+---
+
 
 ## 🤖 Automatic mode
 
