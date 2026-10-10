@@ -3,10 +3,44 @@ Hardware scaling controllers: CPU core hotplugging, clock caps,
 governors/EPP, GPU clamping, memory swappiness, radios, and MOM defensive posture.
 """
 
+import os
+import glob
 import subprocess
 import sys
-from .hal import run_cmd, write_sysfs, is_intel_cpu, scaled_cap
+from .hal import run_cmd, write_sysfs, is_intel_cpu, scaled_cap, get_cpu_driver
 from .discovery import discover_hardware, discover_cpu_topology_order
+
+def get_online_cpu_ids():
+    """Return sorted list of currently online CPU logical IDs."""
+    online_path = "/sys/devices/system/cpu/online"
+    if os.path.exists(online_path):
+        try:
+            with open(online_path, "r") as f:
+                online = []
+                for part in f.read().strip().split(","):
+                    if not part:
+                        continue
+                    if "-" in part:
+                        lo, hi = map(int, part.split("-"))
+                        online.extend(range(lo, hi + 1))
+                    elif part.isdigit():
+                        online.append(int(part))
+                if online:
+                    return sorted(set(online))
+        except Exception:
+            pass
+    # Fallback checking individual online flags
+    result = [0]
+    for c in glob.glob("/sys/devices/system/cpu/cpu[1-9]*"):
+        cid = os.path.basename(c).replace("cpu", "")
+        if cid.isdigit():
+            try:
+                with open(os.path.join(c, "online"), "r") as f:
+                    if f.read().strip() == "1":
+                        result.append(int(cid))
+            except Exception:
+                pass
+    return sorted(result)
 
 def set_cpu_cores(target_count):
     """
@@ -28,19 +62,43 @@ def set_cpu_cores(target_count):
         write_sysfs(f"/sys/devices/system/cpu/cpu{cpu_id}/online", state)
 
 def set_cpu_boost(enabled):
-    """Enable or disable CPU turbo/boost across AMD and Intel CPUs."""
-    if is_intel_cpu():
+    """
+    Enable or disable CPU turbo/boost across AMD and Intel CPUs.
+    On AMD (amd-pstate, amd-pstate-epp, acpi-cpufreq), checks /sys/devices/system/cpu/cpufreq/boost
+    and writes 1 or 0 if present. Also writes to individual policy boost files if present.
+    On Intel, toggles intel_pstate/no_turbo.
+    """
+    driver = get_cpu_driver()
+    if driver == "intel_pstate" or is_intel_cpu():
         write_sysfs("/sys/devices/system/cpu/intel_pstate/no_turbo", 0 if enabled else 1)
     else:
-        write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+        # AMD / generic cpufreq
+        if os.path.exists("/sys/devices/system/cpu/cpufreq/boost"):
+            write_sysfs("/sys/devices/system/cpu/cpufreq/boost", 1 if enabled else 0)
+        # Also write policy-level boost nodes if present
+        write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/boost", 1 if enabled else 0)
 
 def set_cpu_freq_cap(max_khz):
-    """Cap max CPU frequency across all online cores."""
-    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq", max_khz)
+    """
+    Cap max CPU frequency across all online cores.
+    Writes directly to /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq
+    and policy*/scaling_max_freq for every online core, ignoring offline cores gracefully.
+    """
+    for cpu_id in get_online_cpu_ids():
+        write_sysfs(f"/sys/devices/system/cpu/cpu{cpu_id}/cpufreq/scaling_max_freq", max_khz)
+        write_sysfs(f"/sys/devices/system/cpu/cpufreq/policy{cpu_id}/scaling_max_freq", max_khz)
 
 def set_cpu_governor(governor, epp=None):
-    """Set CPU frequency scaling governor and energy_performance_preference."""
-    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/scaling_governor", governor)
+    """
+    Set CPU frequency scaling governor and energy_performance_preference.
+    For AMD/EPP systems, writes power (or falls back to balance_power if power rejected)
+    for every online core.
+    """
+    online_cpus = get_online_cpu_ids()
+    for cpu_id in online_cpus:
+        write_sysfs(f"/sys/devices/system/cpu/cpu{cpu_id}/cpufreq/scaling_governor", governor)
+        write_sysfs(f"/sys/devices/system/cpu/cpufreq/policy{cpu_id}/scaling_governor", governor)
+
     epp_map = {
         "powersave": "power",
         "performance": "performance",
@@ -48,7 +106,35 @@ def set_cpu_governor(governor, epp=None):
         "balance_power": "balance_power"
     }
     epp_val = epp if epp is not None else epp_map.get(governor, "default")
-    write_sysfs("/sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference", epp_val)
+
+    # Write EPP to online cores with fallback if 'power' is rejected
+    for cpu_id in online_cpus:
+        epp_paths = [
+            f"/sys/devices/system/cpu/cpu{cpu_id}/cpufreq/energy_performance_preference",
+            f"/sys/devices/system/cpu/cpufreq/policy{cpu_id}/energy_performance_preference"
+        ]
+        for epath in epp_paths:
+            if not os.path.exists(epath):
+                continue
+            written = False
+            try:
+                with open(epath, "w") as f:
+                    f.write(str(epp_val))
+                written = True
+            except OSError as e:
+                # If 'power' was rejected or invalid, fall back to balance_power
+                if epp_val == "power":
+                    try:
+                        with open(epath, "w") as f:
+                            f.write("balance_power")
+                        written = True
+                    except OSError:
+                        pass
+                if not written and e.errno not in (16, 2, 19):
+                    print(f"[!] Warning writing to {epath}: {e}")
+            except Exception:
+                pass
+
 
 def set_gpu_clamp(ratio, hw):
     """

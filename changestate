@@ -244,6 +244,14 @@ def main():
         run_cmd('notify-send "ChangeState" "Engaged P:0 [MOM] Metal Over Moss Defensive Posture" -i security-high')
         return
 
+    # Support both 'changestate p<N>' and 'changestate apply [p<N>]'
+    if target == "apply":
+        if len(sys.argv) > 2 and sys.argv[2] not in ("-h", "--help", "help"):
+            target = sys.argv[2].lower()
+        else:
+            print("Usage: changestate apply <capacity_tier>")
+            sys.exit(0 if len(sys.argv) > 2 and sys.argv[2] in ("-h", "--help", "help") else 1)
+
     prime_val = None
     if target.startswith("p") and target[1:].isdigit():
         prime_val = int(target[1:])

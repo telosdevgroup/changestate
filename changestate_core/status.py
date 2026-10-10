@@ -2,6 +2,7 @@
 State management, telemetry snapshot recording, and CLI diagnostics.
 """
 
+import os
 import glob
 import json
 import subprocess
@@ -129,11 +130,24 @@ def show_status():
 
     # Turbo boost status
     turbo_disabled = True
-    try:
-        with open("/sys/devices/system/cpu/intel_pstate/no_turbo", "r") as f:
-            turbo_disabled = (f.read().strip() == "1")
-    except Exception:
-        pass
+    if os.path.exists("/sys/devices/system/cpu/intel_pstate/no_turbo"):
+        try:
+            with open("/sys/devices/system/cpu/intel_pstate/no_turbo", "r") as f:
+                turbo_disabled = (f.read().strip() == "1")
+        except Exception:
+            pass
+    elif os.path.exists("/sys/devices/system/cpu/cpufreq/boost"):
+        try:
+            with open("/sys/devices/system/cpu/cpufreq/boost", "r") as f:
+                turbo_disabled = (f.read().strip() == "0")
+        except Exception:
+            pass
+    elif os.path.exists("/sys/devices/system/cpu/cpufreq/policy0/boost"):
+        try:
+            with open("/sys/devices/system/cpu/cpufreq/policy0/boost", "r") as f:
+                turbo_disabled = (f.read().strip() == "0")
+        except Exception:
+            pass
 
     # Swappiness
     swappiness = "60"

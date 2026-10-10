@@ -2,7 +2,7 @@
 changestate_core package initialization.
 """
 
-from .hal import run_cmd, write_sysfs, is_intel_cpu, has_nvidia_gpu, scaled_cap
+from .hal import run_cmd, write_sysfs, is_intel_cpu, has_nvidia_gpu, scaled_cap, get_cpu_driver
 from .discovery import (
     UNIVERSAL_PRIME_PCT,
     discover_hardware,
@@ -10,6 +10,7 @@ from .discovery import (
     get_capacity_tiers_metadata
 )
 from .controllers import (
+    get_online_cpu_ids,
     set_cpu_cores,
     set_cpu_boost,
     set_cpu_freq_cap,
@@ -36,9 +37,12 @@ __all__ = [
     "is_intel_cpu",
     "has_nvidia_gpu",
     "scaled_cap",
+    "get_cpu_driver",
     "UNIVERSAL_PRIME_PCT",
     "discover_hardware",
+    "discover_cpu_topology_order",
     "get_capacity_tiers_metadata",
+    "get_online_cpu_ids",
     "set_cpu_cores",
     "set_cpu_boost",
     "set_cpu_freq_cap",
