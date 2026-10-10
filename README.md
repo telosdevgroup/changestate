@@ -1,12 +1,20 @@
-# 🎚️ ChangeState
+# 💧 ChangeState
 
-**An automatic, prime-based resource manager for Linux computers.**
+**A prime-based liquid operating-state manager for Linux computers (auto and manual modes).**
 
-Drop it on your boxes: they run cooler, whisper-quiet, and consume dramatically less electricity without users ever having to think about it. ChangeState does this by downregulating CPU cores, capping clock speeds to a strict 80% ceiling, disabling boost, and tuning memory caches—until you explicitly unlock full 100% clock speed at P:31.
+*You love your hardware, and so do we. That's why we "conservativize" the operating range: to help maximize the effectiveness, thermal health, and longevity of your machines.*
 
-Works out of the box with AMD and Intel CPUs, and AMD and NVIDIA GPUs. Zero third-party dependencies.
+ChangeState coordinates hardware and system settings across CPU, GPU, memory, storage, and other system subsystems to manage how a Linux computer operates. Its prime-based capacity levels provide a consistent framework for changing the machine's overall operating state, manually or automatically in response to user activity.
 
-> *You love your hardware, and so do we. That's why we "conservativize" the operating range: to help maximize the effectiveness, thermal health, and longevity of your machines.*
+The normal operating range, P:2 through P:29, applies a conservative operating model with an 80% maximum clock ceiling for tier calculations, alongside adjustments to CPU core availability, boost behavior, GPU clocks and settings, memory caching, storage settings, and other system controls.
+
+At the extremes, ChangeState offers two special states:
+
+* **P:0 — MOM (Metal Over Moss):** a defensive posture that radically reduces the system to a minimal operating configuration.
+* **P:31 — Salt Flats:** an explicit unlock of full performance beyond the normal operating ceiling, including boost.
+
+Automatic mode stays within the more central P:7–P:23 band and never autonomously enters either end.
+
 
 ---
 
